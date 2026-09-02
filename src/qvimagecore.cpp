@@ -498,8 +498,29 @@ bool QVImageCore::removeTinyDataTagsFromIccProfile(QByteArray &profile)
 
 void QVImageCore::jumpToNextFrame()
 {
-    if (currentFileDetails.isMovieLoaded)
+    if (currentFileDetails.isMovieLoaded) {
+        loadedMovie.setPaused(true);
         loadedMovie.jumpToNextFrame();
+    }
+}
+
+void QVImageCore::jumpToPreviousFrame()
+{
+    if (!currentFileDetails.isMovieLoaded)
+        return;
+
+    loadedMovie.setPaused(true);
+    loadedMovie.jumpToFrame(qMax(0, loadedMovie.currentFrameNumber() - 1));
+}
+
+void QVImageCore::seekToPercent(int percent)
+{
+    if (!currentFileDetails.isMovieLoaded || loadedMovie.frameCount() <= 0)
+        return;
+
+    percent = qBound(0, percent, 100);
+    const int lastFrame = qMax(0, loadedMovie.frameCount() - 1);
+    loadedMovie.jumpToFrame(qRound(lastFrame * (percent / 100.0)));
 }
 
 void QVImageCore::setPaused(bool desiredState)

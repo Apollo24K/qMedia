@@ -435,6 +435,8 @@ void MainWindow::disableActions()
                 } else if (cloneData.last() == "playbackdisable") {
                     clone->setEnabled(getImageDetails().isMovieLoaded
                                       || graphicsView->isVideoLoaded());
+                } else if (cloneData.last() == "videodisable") {
+                    clone->setEnabled(graphicsView->isVideoLoaded());
                 } else if (cloneData.last() == "undodisable") {
                     clone->setEnabled(!lastDeletedFiles.isEmpty()
                                       && !lastDeletedFiles.top().pathInTrash.isEmpty());
@@ -1145,10 +1147,62 @@ void MainWindow::pause()
 
 void MainWindow::nextFrame()
 {
-    if (!getImageDetails().isMovieLoaded)
+    const bool isVideo = getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video;
+    if ((isVideo && !graphicsView->isVideoLoaded())
+        || (!isVideo && !getImageDetails().isMovieLoaded)) {
         return;
+    }
 
     graphicsView->jumpToNextFrame();
+    const auto pauseActions = qvApp->getActionManager().getAllClonesOfAction("pause", this);
+    for (const auto &pauseAction : pauseActions) {
+        pauseAction->setText(tr("Res&ume"));
+        pauseAction->setIcon(QIcon::fromTheme("media-playback-start"));
+    }
+}
+
+void MainWindow::previousFrame()
+{
+    const bool isVideo = getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video;
+    if ((isVideo && !graphicsView->isVideoLoaded())
+        || (!isVideo && !getImageDetails().isMovieLoaded)) {
+        return;
+    }
+
+    graphicsView->jumpToPreviousFrame();
+    const auto pauseActions = qvApp->getActionManager().getAllClonesOfAction("pause", this);
+    for (const auto &pauseAction : pauseActions) {
+        pauseAction->setText(tr("Res&ume"));
+        pauseAction->setIcon(QIcon::fromTheme("media-playback-start"));
+    }
+}
+
+void MainWindow::toggleMute()
+{
+    if (getCurrentMedia().mediaType != QVMediaCatalog::MediaType::Video
+        || !graphicsView->isVideoLoaded()) {
+        return;
+    }
+
+    graphicsView->toggleVideoMuted();
+    const auto muteActions = qvApp->getActionManager().getAllClonesOfAction("mute", this);
+    for (const auto &muteAction : muteActions) {
+        muteAction->setText(graphicsView->isVideoMuted() ? tr("Un&mute") : tr("&Mute"));
+        muteAction->setIcon(QIcon::fromTheme(graphicsView->isVideoMuted()
+                                                     ? "audio-volume-muted"
+                                                     : "audio-volume-high"));
+    }
+}
+
+void MainWindow::seekToPercent(int percent)
+{
+    const bool isVideo = getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video;
+    if ((isVideo && !graphicsView->isVideoLoaded())
+        || (!isVideo && !getImageDetails().isMovieLoaded)) {
+        return;
+    }
+
+    graphicsView->seekToPercent(percent);
 }
 
 void MainWindow::toggleSlideshow()
@@ -1186,6 +1240,13 @@ void MainWindow::slideshowAction()
 
 void MainWindow::decreaseSpeed()
 {
+    if (getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video) {
+        if (graphicsView->isVideoLoaded()) {
+            graphicsView->setVideoPlaybackSpeed(graphicsView->videoPlaybackSpeed() - 25);
+        }
+        return;
+    }
+
     if (!getImageDetails().isMovieLoaded)
         return;
 
@@ -1194,6 +1255,12 @@ void MainWindow::decreaseSpeed()
 
 void MainWindow::resetSpeed()
 {
+    if (getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video) {
+        if (graphicsView->isVideoLoaded())
+            graphicsView->setVideoPlaybackSpeed(100);
+        return;
+    }
+
     if (!getImageDetails().isMovieLoaded)
         return;
 
@@ -1202,6 +1269,13 @@ void MainWindow::resetSpeed()
 
 void MainWindow::increaseSpeed()
 {
+    if (getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video) {
+        if (graphicsView->isVideoLoaded()) {
+            graphicsView->setVideoPlaybackSpeed(graphicsView->videoPlaybackSpeed() + 25);
+        }
+        return;
+    }
+
     if (!getImageDetails().isMovieLoaded)
         return;
 

@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QGraphicsScene>
+#include <QGraphicsPixmapItem>
 #include <QGraphicsVideoItem>
 #include <QPointer>
 #include <QTextStream>
@@ -12,9 +13,11 @@
 #include <QTimer>
 #include <QUrl>
 #include <QVariantAnimation>
+#include <QtMath>
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #  include <QAudioDevice>
+#  include <QMediaMetaData>
 #  include <QVideoFrame>
 #  include <QVideoSink>
 #endif
@@ -61,6 +64,10 @@ QVVideoView::QVVideoView(QGraphicsScene *scene, QObject *parent)
     videoItem->setAcceptedMouseButtons(Qt::NoButton);
 
     player.setVideoOutput(videoItem);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    endFrameItem = new QGraphicsPixmapItem(videoItem);
+    endFrameItem->hide();
+#endif
     connect(videoItem, &QGraphicsVideoItem::nativeSizeChanged, this,
             [this](const QSizeF &size) {
                 profileEvent(QStringLiteral("native video size"),
@@ -82,17 +89,36 @@ QVVideoView::QVVideoView(QGraphicsScene *scene, QObject *parent)
         profileEvent(QStringLiteral("playback error"), player.errorString());
         emit errorOccurred();
     });
-    if (!profileFilePath.isEmpty()) {
-        connect(&player, &QMediaPlayer::metaDataChanged, this,
-                [this]() { profileEvent(QStringLiteral("metadata available")); });
-        connect(videoItem->videoSink(), &QVideoSink::videoFrameChanged, this,
-                [this](const QVideoFrame &frame) {
-                    if (profileFirstFramePending && frame.isValid()) {
-                        profileFirstFramePending = false;
-                        profileEvent(QStringLiteral("first valid video frame"));
-                    }
-                });
-    }
+    connect(videoItem->videoSink(), &QVideoSink::videoFrameChanged, this,
+            [this](const QVideoFrame &frame) {
+                if (!frame.isValid())
+                    return;
+
+                lastVideoFrame = frame;
+                if (frame.startTime() >= 0)
+                    displayedFrameStartMs = frame.startTime() / 1000;
+                if (frame.endTime() > frame.startTime()) {
+                    displayedFrameDurationMs = qMax<qint64>(
+                            1, (frame.endTime() - frame.startTime()) / 1000);
+                }
+                if (profileFirstFramePending) {
+                    profileFirstFramePending = false;
+                    profileEvent(QStringLiteral("first valid video frame"));
+                }
+                endFrameItem->hide();
+                if (pauseOnNextVideoFrame) {
+                    pauseOnNextVideoFrame = false;
+                    player.pause();
+                    if (audioPlayer)
+                        audioPlayer->pause();
+                }
+            });
+    connect(&player, &QMediaPlayer::metaDataChanged, this, [this]() {
+        const qreal frameRate = player.metaData().value(QMediaMetaData::VideoFrameRate).toReal();
+        if (frameRate > 0.0)
+            displayedFrameDurationMs = qMax<qint64>(1, qRound64(1000.0 / frameRate));
+        profileEvent(QStringLiteral("metadata available"));
+    });
 #else
     player.setVolume(100);
     connect(&player, &QMediaPlayer::stateChanged, this, &QVVideoView::playbackStateChanged);
@@ -164,7 +190,9 @@ void QVVideoView::initializeAudioOutput()
     audioOutput = new QAudioOutput(this);
     audioPlayerVideoSink = new QVideoSink(this);
     audioOutput->setVolume(0.0);
+    audioOutput->setMuted(muted);
     audioPlayer->setAudioOutput(audioOutput);
+    audioPlayer->setPlaybackRate(playbackSpeedPercent / 100.0);
     // The Windows backend can report successful audio-only playback without
     // rendering an embedded audio track unless it builds the complete media
     // topology. A private sink satisfies that requirement while discarding the
@@ -224,6 +252,7 @@ void QVVideoView::startAudioPlayback()
 
     ++audioSyncGeneration;
     audioSynchronizationPending = true;
+    audioSyncAttemptScheduled = false;
     audioFadeAnimation->stop();
     audioOutput->setVolume(0.0);
     audioPlayer->stop();
@@ -236,18 +265,20 @@ void QVVideoView::startAudioPlayback()
 
 void QVVideoView::trySynchronizeAudioPlayback()
 {
-    if (!audioSynchronizationPending || !audioPlayer || !videoLoaded)
+    if (!audioSynchronizationPending || audioSyncAttemptScheduled || !audioPlayer || !videoLoaded)
         return;
 
     const QMediaPlayer::MediaStatus audioStatus = audioPlayer->mediaStatus();
     const bool audioSourceReady = audioStatus == QMediaPlayer::LoadedMedia
             || audioStatus == QMediaPlayer::BufferingMedia
             || audioStatus == QMediaPlayer::BufferedMedia;
-    if (!audioSourceReady)
+    if (!audioSourceReady || !audioPlayer->isSeekable())
         return;
 
     const quint64 generation = audioSyncGeneration;
     const qint64 targetPosition = player.position();
+    audioSyncAttemptScheduled = true;
+    audioPlayer->pause();
     audioPlayer->setPosition(targetPosition);
     profileEvent(QStringLiteral("audio synchronization requested"),
                  QStringLiteral("target=%1ms").arg(targetPosition));
@@ -255,12 +286,24 @@ void QVVideoView::trySynchronizeAudioPlayback()
     // Keep the audio muted until the backend has had a chance to apply the
     // seek, then correct once more against the still-running video clock.
     QTimer::singleShot(75, this, [this, generation]() {
-        if (!audioSynchronizationPending || generation != audioSyncGeneration)
+        if (generation != audioSyncGeneration)
+            return;
+
+        audioSyncAttemptScheduled = false;
+        if (!audioSynchronizationPending || !audioPlayer)
             return;
 
         const qint64 correctedPosition = player.position();
-        if (qAbs(audioPlayer->position() - correctedPosition) > 100)
+        if (qAbs(audioPlayer->position() - correctedPosition) > 100) {
             audioPlayer->setPosition(correctedPosition);
+            profileEvent(QStringLiteral("audio synchronization retry"),
+                         QStringLiteral("video=%1ms audio=%2ms")
+                                 .arg(correctedPosition)
+                                 .arg(audioPlayer->position()));
+            trySynchronizeAudioPlayback();
+            return;
+        }
+
         if (isPlaying())
             audioPlayer->play();
         else
@@ -290,6 +333,7 @@ void QVVideoView::loadFile(const QString &fileName)
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     ++audioSyncGeneration;
     audioSynchronizationPending = false;
+    audioSyncAttemptScheduled = false;
     if (audioFadeAnimation)
         audioFadeAnimation->stop();
     if (audioOutput)
@@ -300,6 +344,13 @@ void QVVideoView::loadFile(const QString &fileName)
     ++profileLoadId;
     profileLoadTimer.start();
     profileFirstFramePending = true;
+    displayedFrameStartMs = 0;
+    displayedFrameDurationMs = 40;
+    pauseOnNextVideoFrame = false;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    lastVideoFrame = QVideoFrame();
+    endFrameItem->hide();
+#endif
     currentFilePath = fileName;
     profileEvent(QStringLiteral("load requested"), QFileInfo(fileName).fileName());
     videoLoaded = false;
@@ -334,9 +385,13 @@ void QVVideoView::reloadFile()
 void QVVideoView::closeVideo()
 {
     profileFirstFramePending = false;
+    pauseOnNextVideoFrame = false;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    lastVideoFrame = QVideoFrame();
+    endFrameItem->hide();
     ++audioSyncGeneration;
     audioSynchronizationPending = false;
+    audioSyncAttemptScheduled = false;
     if (audioFadeAnimation)
         audioFadeAnimation->stop();
     if (audioPlayer) {
@@ -377,6 +432,88 @@ void QVVideoView::togglePaused()
 #endif
 }
 
+void QVVideoView::toggleMuted()
+{
+    muted = !muted;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    if (audioOutput)
+        audioOutput->setMuted(muted);
+#else
+    player.setMuted(muted);
+#endif
+}
+
+bool QVVideoView::isMuted() const
+{
+    return muted;
+}
+
+void QVVideoView::stepFrame(int direction)
+{
+    if (!videoLoaded || direction == 0)
+        return;
+
+    player.pause();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    if (audioPlayer)
+        audioPlayer->pause();
+#endif
+    const qint64 frameDuration = qMax<qint64>(1, displayedFrameDurationMs);
+    const qint64 targetPosition = direction > 0
+            ? displayedFrameStartMs + frameDuration
+            : qMax<qint64>(0, displayedFrameStartMs - frameDuration);
+    setSynchronizedPosition(targetPosition);
+}
+
+void QVVideoView::seekToPercent(int percent)
+{
+    if (!videoLoaded || player.duration() <= 0)
+        return;
+
+    percent = qBound(0, percent, 100);
+    setSynchronizedPosition(qRound64(player.duration() * (percent / 100.0)));
+}
+
+void QVVideoView::setPlaybackSpeed(int percent)
+{
+    playbackSpeedPercent = qBound(25, percent, 400);
+    player.setPlaybackRate(playbackSpeedPercent / 100.0);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    if (audioPlayer) {
+        audioPlayer->setPlaybackRate(playbackSpeedPercent / 100.0);
+        if (!audioSynchronizationPending)
+            setSynchronizedPosition(player.position());
+    }
+#endif
+}
+
+void QVVideoView::setSynchronizedPosition(qint64 position)
+{
+    position = qBound<qint64>(0, position, qMax<qint64>(0, player.duration()));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    const bool needsPlaybackToRender = videoLoaded
+            && player.playbackState() == QMediaPlayer::StoppedState;
+    if (needsPlaybackToRender)
+        pauseOnNextVideoFrame = true;
+#endif
+    player.setPosition(position);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    if (needsPlaybackToRender)
+        player.play();
+    if (audioPlayer && !audioSynchronizationPending) {
+        ++audioSyncGeneration;
+        const quint64 generation = audioSyncGeneration;
+        audioPlayer->setPosition(position);
+        QTimer::singleShot(50, this, [this, generation]() {
+            if (generation != audioSyncGeneration || !audioPlayer)
+                return;
+            if (qAbs(audioPlayer->position() - player.position()) > 75)
+                audioPlayer->setPosition(player.position());
+        });
+    }
+#endif
+}
+
 bool QVVideoView::isPlaying() const
 {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
@@ -389,6 +526,19 @@ bool QVVideoView::isPlaying() const
 void QVVideoView::mediaStatusChanged(QMediaPlayer::MediaStatus status)
 {
     profileEvent(QStringLiteral("media status"), mediaStatusName(status));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    if (status == QMediaPlayer::EndOfMedia && lastVideoFrame.isValid()) {
+        const QImage finalImage = lastVideoFrame.toImage();
+        if (!finalImage.isNull()) {
+            endFrameItem->setPixmap(QPixmap::fromImage(finalImage));
+            const QSizeF videoSize = videoItem->size();
+            endFrameItem->setTransform(QTransform::fromScale(
+                    videoSize.width() / finalImage.width(),
+                    videoSize.height() / finalImage.height()));
+            endFrameItem->show();
+        }
+    }
+#endif
     const bool isNowLoaded = status == QMediaPlayer::LoadedMedia
             || status == QMediaPlayer::BufferedMedia || status == QMediaPlayer::BufferingMedia
             || status == QMediaPlayer::StalledMedia || status == QMediaPlayer::EndOfMedia;

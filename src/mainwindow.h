@@ -105,7 +105,13 @@ public:
 
     void pause();
 
+    void toggleMute();
+
+    void previousFrame();
+
     void nextFrame();
+
+    void seekToPercent(int percent);
 
     void decreaseSpeed();
 

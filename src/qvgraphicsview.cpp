@@ -1014,7 +1014,32 @@ void QVGraphicsView::closeImage()
 
 void QVGraphicsView::jumpToNextFrame()
 {
-    imageCore.jumpToNextFrame();
+    if (videoCanvasActive) {
+        if (videoView)
+            videoView->stepFrame(1);
+    } else {
+        imageCore.jumpToNextFrame();
+    }
+}
+
+void QVGraphicsView::jumpToPreviousFrame()
+{
+    if (videoCanvasActive) {
+        if (videoView)
+            videoView->stepFrame(-1);
+    } else {
+        imageCore.jumpToPreviousFrame();
+    }
+}
+
+void QVGraphicsView::seekToPercent(int percent)
+{
+    if (videoCanvasActive) {
+        if (videoView)
+            videoView->seekToPercent(percent);
+    } else {
+        imageCore.seekToPercent(percent);
+    }
 }
 
 void QVGraphicsView::setPaused(const bool &desiredState)
@@ -1025,6 +1050,28 @@ void QVGraphicsView::setPaused(const bool &desiredState)
 void QVGraphicsView::setSpeed(const int &desiredSpeed)
 {
     imageCore.setSpeed(desiredSpeed);
+}
+
+void QVGraphicsView::toggleVideoMuted()
+{
+    if (videoView)
+        videoView->toggleMuted();
+}
+
+bool QVGraphicsView::isVideoMuted() const
+{
+    return videoView && videoView->isMuted();
+}
+
+int QVGraphicsView::videoPlaybackSpeed() const
+{
+    return videoView ? videoView->playbackSpeed() : 100;
+}
+
+void QVGraphicsView::setVideoPlaybackSpeed(int percent)
+{
+    if (videoView)
+        videoView->setPlaybackSpeed(percent);
 }
 
 void QVGraphicsView::rotateImage(int rotation)

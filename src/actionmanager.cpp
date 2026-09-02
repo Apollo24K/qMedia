@@ -270,6 +270,8 @@ QMenu *ActionManager::buildToolsMenu(bool addIcon, QWidget *parent)
 
     addCloneOfAction(toolsMenu, "saveframeas");
     addCloneOfAction(toolsMenu, "pause");
+    addCloneOfAction(toolsMenu, "mute");
+    addCloneOfAction(toolsMenu, "previousframe");
     addCloneOfAction(toolsMenu, "nextframe");
     toolsMenu->addSeparator();
     addCloneOfAction(toolsMenu, "decreasespeed");
@@ -613,8 +615,15 @@ void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *releva
         relevantWindow->saveFrameAs();
     } else if (key == "pause") {
         relevantWindow->pause();
+    } else if (key == "mute") {
+        relevantWindow->toggleMute();
+    } else if (key == "previousframe") {
+        relevantWindow->previousFrame();
     } else if (key == "nextframe") {
         relevantWindow->nextFrame();
+    } else if (key.startsWith("seekposition")) {
+        relevantWindow->seekToPercent(key.mid(QStringLiteral("seekposition").length()).toInt()
+                                      * 10);
     } else if (key == "decreasespeed") {
         relevantWindow->decreaseSpeed();
     } else if (key == "resetspeed") {
@@ -775,24 +784,39 @@ void ActionManager::initializeActionLibrary()
     pauseAction->setData({ "playbackdisable" });
     actionLibrary.insert("pause", pauseAction);
 
+    auto *muteAction = new QAction(QIcon::fromTheme("audio-volume-high"), tr("&Mute"));
+    muteAction->setData({ "videodisable" });
+    actionLibrary.insert("mute", muteAction);
+
+    auto *previousFrameAction =
+            new QAction(QIcon::fromTheme("media-skip-backward"), tr("&Previous Frame"));
+    previousFrameAction->setData({ "playbackdisable" });
+    actionLibrary.insert("previousframe", previousFrameAction);
+
     auto *nextFrameAction = new QAction(QIcon::fromTheme("media-skip-forward"), tr("&Next Frame"));
-    nextFrameAction->setData({ "gifdisable" });
+    nextFrameAction->setData({ "playbackdisable" });
     actionLibrary.insert("nextframe", nextFrameAction);
 
     auto *decreaseSpeedAction =
             new QAction(QIcon::fromTheme("media-seek-backward"), tr("&Decrease Speed"));
-    decreaseSpeedAction->setData({ "gifdisable" });
+    decreaseSpeedAction->setData({ "playbackdisable" });
     actionLibrary.insert("decreasespeed", decreaseSpeedAction);
 
     auto *resetSpeedAction =
             new QAction(QIcon::fromTheme("media-playback-start"), tr("&Reset Speed"));
-    resetSpeedAction->setData({ "gifdisable" });
+    resetSpeedAction->setData({ "playbackdisable" });
     actionLibrary.insert("resetspeed", resetSpeedAction);
 
     auto *increaseSpeedAction =
             new QAction(QIcon::fromTheme("media-skip-forward"), tr("&Increase Speed"));
-    increaseSpeedAction->setData({ "gifdisable" });
+    increaseSpeedAction->setData({ "playbackdisable" });
     actionLibrary.insert("increasespeed", increaseSpeedAction);
+
+    for (int position = 0; position <= 9; ++position) {
+        auto *seekAction = new QAction(tr("Jump to %1%").arg(position * 10));
+        seekAction->setData({ "playbackdisable" });
+        actionLibrary.insert("seekposition" + QString::number(position), seekAction);
+    }
 
     auto *slideshowAction =
             new QAction(QIcon::fromTheme("media-playback-start"), tr("Start S&lideshow"));

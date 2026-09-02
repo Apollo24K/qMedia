@@ -16,6 +16,7 @@ public:
 private slots:
     void testClonedActionsUntracked();
     void testCanvasActionsSupportAllVisualMedia();
+    void testPlaybackActionsAndDefaultShortcuts();
     void testImageRequestAfterVideoIsNotDiscarded();
 };
 
@@ -56,6 +57,49 @@ void ActionManagerTests::testCanvasActionsSupportAllVisualMedia()
         QVERIFY2(actionLibrary.contains(key), qPrintable(key));
         QCOMPARE(actionLibrary.value(key)->data().toStringList().constLast(),
                  QString("mediadisable"));
+    }
+}
+
+void ActionManagerTests::testPlaybackActionsAndDefaultShortcuts()
+{
+    const auto &actionLibrary = qvApp->getActionManager().getActionLibrary();
+    const QStringList sharedPlaybackActions = { "pause",         "previousframe",
+                                                "nextframe",     "decreasespeed",
+                                                "resetspeed",    "increasespeed" };
+    for (const QString &key : sharedPlaybackActions) {
+        QVERIFY2(actionLibrary.contains(key), qPrintable(key));
+        QCOMPARE(actionLibrary.value(key)->data().toStringList().constLast(),
+                 QString("playbackdisable"));
+    }
+
+    QVERIFY(actionLibrary.contains("mute"));
+    QCOMPARE(actionLibrary.value("mute")->data().toStringList().constLast(),
+             QString("videodisable"));
+
+    for (int position = 0; position <= 9; ++position) {
+        const QString key = "seekposition" + QString::number(position);
+        QVERIFY2(actionLibrary.contains(key), qPrintable(key));
+        QCOMPARE(actionLibrary.value(key)->data().toStringList().constLast(),
+                 QString("playbackdisable"));
+    }
+
+    QHash<QString, QStringList> defaultShortcuts;
+    for (const auto &shortcut : qvApp->getShortcutManager().getShortcutsList())
+        defaultShortcuts.insert(shortcut.name, shortcut.defaultShortcuts);
+
+    QVERIFY(defaultShortcuts.value("pause").contains(QKeySequence(Qt::Key_Space).toString()));
+    QVERIFY(defaultShortcuts.value("mute").contains(QKeySequence(Qt::Key_M).toString()));
+    QVERIFY(defaultShortcuts.value("previousframe")
+                    .contains(QKeySequence(Qt::Key_Comma).toString()));
+    QCOMPARE(ShortcutManager::stringListToKeySequenceList(
+                     defaultShortcuts.value("previousframe"))
+                     .constFirst(),
+             QKeySequence(Qt::Key_Comma));
+    QVERIFY(defaultShortcuts.value("nextframe")
+                    .contains(QKeySequence(Qt::Key_Period).toString()));
+    for (int position = 0; position <= 9; ++position) {
+        QVERIFY(defaultShortcuts.value("seekposition" + QString::number(position))
+                        .contains(QKeySequence(Qt::Key_0 + position).toString()));
     }
 }
 

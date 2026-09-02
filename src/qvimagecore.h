@@ -74,6 +74,8 @@ public:
     void settingsUpdated();
 
     void jumpToNextFrame();
+    void jumpToPreviousFrame();
+    void seekToPercent(int percent);
     void setPaused(bool desiredState);
     void setSpeed(int desiredSpeed);
 

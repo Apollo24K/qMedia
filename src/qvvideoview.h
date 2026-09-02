@@ -8,12 +8,14 @@
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #  include <QAudioOutput>
+#  include <QVideoFrame>
 #else
 #  include <QMediaContent>
 #endif
 
 class QGraphicsScene;
 class QGraphicsVideoItem;
+class QGraphicsPixmapItem;
 class QVariantAnimation;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 class QVideoSink;
@@ -33,9 +35,15 @@ public:
     void reloadFile();
     void closeVideo();
     void togglePaused();
+    void toggleMuted();
+    void stepFrame(int direction);
+    void seekToPercent(int percent);
+    void setPlaybackSpeed(int percent);
 
     bool isLoaded() const { return videoLoaded; }
     bool isPlaying() const;
+    bool isMuted() const;
+    int playbackSpeed() const { return playbackSpeedPercent; }
     QString errorString() const { return player.errorString(); }
     QGraphicsVideoItem *graphicsItem() const { return videoItem; }
     void recordInitializationDuration(qint64 milliseconds);
@@ -55,6 +63,7 @@ private:
     void trySynchronizeAudioPlayback();
     void fadeInAudio();
 #endif
+    void setSynchronizedPosition(qint64 position);
 
     QMediaPlayer player;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
@@ -62,6 +71,8 @@ private:
     QAudioOutput *audioOutput = nullptr;
     QVideoSink *audioPlayerVideoSink = nullptr;
     QVariantAnimation *audioFadeAnimation = nullptr;
+    QGraphicsPixmapItem *endFrameItem = nullptr;
+    QVideoFrame lastVideoFrame;
 #endif
     QGraphicsVideoItem *videoItem;
     QString currentFilePath;
@@ -69,9 +80,15 @@ private:
     QElapsedTimer profileLoadTimer;
     quint64 profileLoadId = 0;
     bool profileFirstFramePending = false;
+    qint64 displayedFrameStartMs = 0;
+    qint64 displayedFrameDurationMs = 40;
+    int playbackSpeedPercent = 100;
+    bool muted = false;
+    bool pauseOnNextVideoFrame = false;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     quint64 audioSyncGeneration = 0;
     bool audioSynchronizationPending = false;
+    bool audioSyncAttemptScheduled = false;
 #endif
     bool videoLoaded = false;
 };

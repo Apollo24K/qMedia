@@ -50,6 +50,8 @@ public:
 
     void closeImage();
     void jumpToNextFrame();
+    void jumpToPreviousFrame();
+    void seekToPercent(int percent);
     void setPaused(const bool &desiredState);
     void setSpeed(const int &desiredSpeed);
     void rotateImage(int rotation);
@@ -62,6 +64,10 @@ public:
     void reloadVideo();
     void closeVideo();
     void toggleVideoPaused();
+    void toggleVideoMuted();
+    bool isVideoMuted() const;
+    int videoPlaybackSpeed() const;
+    void setVideoPlaybackSpeed(int percent);
 
     const QVMediaCatalog::State &getCurrentMedia() const { return imageCore.getCurrentMedia(); }
     const QVImageCore::FileDetails &getImageDetails() const { return imageCore.getImageDetails(); }

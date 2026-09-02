@@ -154,10 +154,22 @@ void ShortcutManager::initializeShortcutsList()
                            "saveframeas",
                            keyBindingsToStringList(QKeySequence::Save),
                            {} });
+    shortcutsList.append({ tr("Pause"),
+                           "pause",
+                           { QKeySequence(Qt::Key_Space).toString(),
+                             QKeySequence(Qt::Key_P).toString() },
+                           {} });
     shortcutsList.append(
-            { tr("Pause"), "pause", QStringList(QKeySequence(Qt::Key_P).toString()), {} });
-    shortcutsList.append(
-            { tr("Next Frame"), "nextframe", QStringList(QKeySequence(Qt::Key_N).toString()), {} });
+            { tr("Mute"), "mute", QStringList(QKeySequence(Qt::Key_M).toString()), {} });
+    shortcutsList.append({ tr("Previous Frame"),
+                           "previousframe",
+                           QStringList(QKeySequence(Qt::Key_Comma).toString()),
+                           {} });
+    shortcutsList.append({ tr("Next Frame"),
+                           "nextframe",
+                           { QKeySequence(Qt::Key_Period).toString(),
+                             QKeySequence(Qt::Key_N).toString() },
+                           {} });
     shortcutsList.append({ tr("Decrease Speed"),
                            "decreasespeed",
                            QStringList(QKeySequence(Qt::Key_BracketLeft).toString()),
@@ -170,6 +182,12 @@ void ShortcutManager::initializeShortcutsList()
                            "increasespeed",
                            QStringList(QKeySequence(Qt::Key_BracketRight).toString()),
                            {} });
+    for (int position = 0; position <= 9; ++position) {
+        shortcutsList.append({ tr("Jump to %1%").arg(position * 10),
+                               "seekposition" + QString::number(position),
+                               QStringList(QKeySequence(Qt::Key_0 + position).toString()),
+                               {} });
+    }
     shortcutsList.append({ tr("Toggle Slideshow"), "slideshow", {}, {} });
     shortcutsList.append(
             { tr("Settings"), "options", keyBindingsToStringList(QKeySequence::Preferences), {} });
