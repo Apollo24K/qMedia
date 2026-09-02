@@ -1,9 +1,11 @@
 #include <QtTest>
 
 #include "qvmediacatalog.h"
+#include "qvmediaformats.h"
 
 #include <QDir>
 #include <QFile>
+#include <QSet>
 #include <QTemporaryDir>
 
 class MediaCatalogTests : public QObject
@@ -14,6 +16,7 @@ private slots:
     void scansAndClassifiesSupportedMedia();
     void sortsUsingRequestedMode();
     void tracksCurrentFileIndex();
+    void discoversNormalizedVideoFormats();
 };
 
 static QString createFile(const QString &directory, const QString &name, const QByteArray &data = {})
@@ -102,6 +105,26 @@ void MediaCatalogTests::tracksCurrentFileIndex()
     QVERIFY(catalog.state().fileInfo.filePath().isEmpty());
     QVERIFY(!catalog.state().isLoadRequested);
     QCOMPARE(catalog.state().folderFiles.size(), 2);
+}
+
+void MediaCatalogTests::discoversNormalizedVideoFormats()
+{
+    const auto formats = QVMediaFormats::supportedVideoFormats();
+    QVERIFY(!formats.extensions.isEmpty());
+    QVERIFY(!formats.mimeTypes.isEmpty());
+    QVERIFY(formats.extensions.contains(".mp4"));
+    QVERIFY(!formats.extensions.contains(".mp3"));
+
+    QSet<QString> uniqueExtensions;
+    for (const QString &extension : formats.extensions) {
+        QVERIFY(extension.startsWith(QLatin1Char('.')));
+        QCOMPARE(extension, extension.toLower());
+        uniqueExtensions.insert(extension);
+    }
+    QCOMPARE(uniqueExtensions.size(), formats.extensions.size());
+
+    for (const QString &mimeType : formats.mimeTypes)
+        QVERIFY(!mimeType.startsWith("audio/"));
 }
 
 QTEST_GUILESS_MAIN(MediaCatalogTests)

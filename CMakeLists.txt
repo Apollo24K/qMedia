@@ -28,14 +28,14 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Find required Qt components
-find_package(Qt6 QUIET COMPONENTS Core Gui Network Widgets Svg)
+find_package(Qt6 QUIET COMPONENTS Core Gui Multimedia Network Widgets Svg)
 if(Qt6_FOUND)
     set(QT_VERSION_MAJOR 6)
     set(QT_VERSION ${Qt6_VERSION})
     # Find optional tools
     find_package(Qt6 QUIET COMPONENTS LinguistTools)
 else()
-    set(QT5_FIND_COMPONENTS Core Gui Network Widgets Svg)
+    set(QT5_FIND_COMPONENTS Core Gui Multimedia Network Widgets Svg)
     if(UNIX AND NOT APPLE)
         list(APPEND QT5_FIND_COMPONENTS X11Extras)
     endif()
@@ -60,6 +60,7 @@ set(PROJECT_SOURCES
     src/qvinfodialog.cpp
     src/qvimagecore.cpp
     src/qvmediacatalog.cpp
+    src/qvmediaformats.cpp
     src/qvshortcutdialog.cpp
     src/actionmanager.cpp
     src/settingsmanager.cpp
@@ -79,6 +80,7 @@ set(PROJECT_HEADERS
     src/qvinfodialog.h
     src/qvimagecore.h
     src/qvmediacatalog.h
+    src/qvmediaformats.h
     src/qvshortcutdialog.h
     src/actionmanager.h
     src/settingsmanager.h
@@ -141,7 +143,7 @@ if(WIN32)
 endif()
 add_executable(${PROJECT_NAME} ${EXECUTABLE_TYPE} ${PROJECT_SOURCES} ${PROJECT_HEADERS} ${PROJECT_FORMS} ${PROJECT_RESOURCES})
 
-target_link_libraries(${PROJECT_NAME} PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Gui Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg)
+target_link_libraries(${PROJECT_NAME} PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Gui Qt${QT_VERSION_MAJOR}::Multimedia Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg)
 
 # Set the executable name to lowercase on Linux
 if(UNIX AND NOT APPLE)

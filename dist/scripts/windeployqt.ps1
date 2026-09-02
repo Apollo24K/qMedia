@@ -38,6 +38,14 @@ $winDeployQt = $isCrossCompile ? "$(qmake -query QT_HOST_PREFIX)\bin\windeployqt
 $argQtPaths = $isCrossCompile ? "--qtpaths=$env:QT_ROOT_DIR\bin\qtpaths.bat" : $null
 $argForceOpenSsl = $qtVersion -ge [version]'6.8' ? "--force-openssl" : $null
 & $winDeployQt $argQtPaths $argForceOpenSsl --no-compiler-runtime "bin\qView.exe"
+if ($LASTEXITCODE -ne 0) {
+    throw "windeployqt failed with exit code $LASTEXITCODE"
+}
+
+$multimediaPluginDir = $qtVersion -ge [version]'6.0' ? "bin\multimedia" : "bin\mediaservice"
+if (-not (Test-Path $multimediaPluginDir)) {
+    throw "Qt Multimedia deployment is incomplete: $multimediaPluginDir was not created"
+}
 
 $imfDir = "bin\imageformats"
 if ((Test-Path "$imfDir\kimg_tga.dll") -and (Test-Path "$imfDir\qtga.dll")) {

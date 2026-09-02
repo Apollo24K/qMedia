@@ -79,6 +79,10 @@ public:
 
     const QStringList &getMimeTypeNameList() const { return mimeTypeNameList; }
 
+    const QStringList &getVideoExtensionList() const { return videoExtensionList; }
+
+    const QStringList &getVideoMimeTypeNameList() const { return videoMimeTypeNameList; }
+
     SettingsManager &getSettingsManager() { return settingsManager; }
 
     ShortcutManager &getShortcutManager() { return shortcutManager; }
@@ -101,6 +105,8 @@ private:
     QStringList nameFilterList;
     QStringList fileExtensionList;
     QStringList mimeTypeNameList;
+    QStringList videoExtensionList;
+    QStringList videoMimeTypeNameList;
 
     // This order is very important
     SettingsManager settingsManager;

@@ -1,6 +1,7 @@
 #include "qvapplication.h"
 #include "qvoptionsdialog.h"
 #include "qvcocoafunctions.h"
+#include "qvmediaformats.h"
 #include "updatechecker.h"
 
 #include <QFileOpenEvent>
@@ -366,6 +367,13 @@ void QVApplication::defineFilterLists()
 
         mimeTypeNameList << mime;
     }
+
+    // Discover formats supported by the active Qt Multimedia backend. These are kept
+    // separate until the video presentation path is ready, so image-only navigation
+    // does not attempt to decode videos through QImageReader.
+    const auto videoFormats = QVMediaFormats::supportedVideoFormats();
+    videoExtensionList = videoFormats.extensions;
+    videoMimeTypeNameList = videoFormats.mimeTypes;
 
     // Build name filter list for file dialogs
     nameFilterList << filterString;

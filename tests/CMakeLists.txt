@@ -2,7 +2,7 @@
 # This CMakeLists.txt should be included by the parent project
 
 # Find Qt Test component and other dependencies
-find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Core Gui Network Widgets Svg Test REQUIRED)
+find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Core Gui Multimedia Network Widgets Svg Test REQUIRED)
 
 # Get the same source files as the main project
 set(TEST_SOURCES
@@ -18,6 +18,7 @@ set(TEST_SOURCES
     ../src/qvinfodialog.cpp
     ../src/qvimagecore.cpp
     ../src/qvmediacatalog.cpp
+    ../src/qvmediaformats.cpp
     ../src/qvshortcutdialog.cpp
     ../src/actionmanager.cpp
     ../src/settingsmanager.cpp
@@ -58,6 +59,7 @@ target_sources(actionmanagertests PRIVATE ${TEST_RESOURCES})
 target_link_libraries(actionmanagertests PRIVATE 
     Qt${QT_VERSION_MAJOR}::Core 
     Qt${QT_VERSION_MAJOR}::Gui 
+    Qt${QT_VERSION_MAJOR}::Multimedia
     Qt${QT_VERSION_MAJOR}::Network 
     Qt${QT_VERSION_MAJOR}::Widgets 
     Qt${QT_VERSION_MAJOR}::Svg 
@@ -94,10 +96,13 @@ add_executable(mediacatalogtests
     tst_mediacatalogtests.cpp
     ../src/qvmediacatalog.cpp
     ../src/qvmediacatalog.h
+    ../src/qvmediaformats.cpp
+    ../src/qvmediaformats.h
 )
 target_include_directories(mediacatalogtests PRIVATE ../src)
 target_link_libraries(mediacatalogtests PRIVATE
     Qt${QT_VERSION_MAJOR}::Core
+    Qt${QT_VERSION_MAJOR}::Multimedia
     Qt${QT_VERSION_MAJOR}::Test
 )
 add_test(NAME MediaCatalogTests COMMAND mediacatalogtests)
