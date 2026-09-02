@@ -60,6 +60,10 @@ signals:
 
     void fileChanged();
 
+    void imageFileRequested();
+
+    void videoFileRequested(const QString &fileName);
+
     void updatedLoadedPixmapItem();
 
 protected:

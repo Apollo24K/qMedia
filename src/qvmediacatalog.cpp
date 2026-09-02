@@ -8,9 +8,10 @@
 #include <chrono>
 #include <random>
 
-void QVMediaCatalog::setCurrentFile(const QFileInfo &fileInfo)
+void QVMediaCatalog::setCurrentFile(const QFileInfo &fileInfo, MediaType mediaType)
 {
     currentState.fileInfo = fileInfo;
+    currentState.mediaType = mediaType;
     updateCurrentIndex();
 }
 
@@ -18,17 +19,52 @@ void QVMediaCatalog::clearCurrentFile()
 {
     currentState.fileInfo = QFileInfo();
     currentState.isLoadRequested = false;
+    currentState.mediaType = MediaType::Unknown;
+}
+
+QVMediaCatalog::MediaType QVMediaCatalog::mediaTypeForFile(const QFileInfo &fileInfo,
+                                                           const ScanOptions &options,
+                                                           QString *detectedMimeType)
+{
+    MediaType mediaType = MediaType::Unknown;
+    const QString fileName = fileInfo.fileName();
+    for (const SupportedMedia &supported : options.supportedMedia) {
+        for (const QString &extension : supported.extensions) {
+            if (fileName.endsWith(extension, Qt::CaseInsensitive)) {
+                mediaType = supported.type;
+                break;
+            }
+        }
+        if (mediaType != MediaType::Unknown)
+            break;
+    }
+
+    QString mimeType;
+    if (mediaType == MediaType::Unknown || options.sortMode == 4) {
+        QMimeDatabase mimeDb;
+        const QMimeDatabase::MatchMode matchMode = options.allowMimeContentDetection
+                ? QMimeDatabase::MatchDefault
+                : QMimeDatabase::MatchExtension;
+        mimeType = mimeDb.mimeTypeForFile(fileInfo.absoluteFilePath(), matchMode).name();
+        if (mediaType == MediaType::Unknown) {
+            for (const SupportedMedia &supported : options.supportedMedia) {
+                if (supported.mimeTypes.contains(mimeType)) {
+                    mediaType = supported.type;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (detectedMimeType)
+        *detectedMimeType = mimeType;
+    return mediaType;
 }
 
 QList<QVMediaCatalog::MediaFile> QVMediaCatalog::scanFolder(const QString &dirPath,
                                                            const ScanOptions &options)
 {
     QList<MediaFile> fileList;
-    QMimeDatabase mimeDb;
-    const QMimeDatabase::MatchMode mimeMatchMode = options.allowMimeContentDetection
-            ? QMimeDatabase::MatchDefault
-            : QMimeDatabase::MatchExtension;
-
     QDir::Filters filters = QDir::Files;
     if (options.includeHidden)
         filters |= QDir::Hidden;
@@ -42,30 +78,8 @@ QList<QVMediaCatalog::MediaFile> QVMediaCatalog::scanFolder(const QString &dirPa
         if (fileName.startsWith("._"))
             continue;
 
-        MediaType mediaType = MediaType::Unknown;
         QString mimeType;
-        for (const SupportedMedia &supported : options.supportedMedia) {
-            for (const QString &extension : supported.extensions) {
-                if (fileName.endsWith(extension, Qt::CaseInsensitive)) {
-                    mediaType = supported.type;
-                    break;
-                }
-            }
-            if (mediaType != MediaType::Unknown)
-                break;
-        }
-
-        if (mediaType == MediaType::Unknown || options.sortMode == 4) {
-            mimeType = mimeDb.mimeTypeForFile(absoluteFilePath, mimeMatchMode).name();
-            if (mediaType == MediaType::Unknown) {
-                for (const SupportedMedia &supported : options.supportedMedia) {
-                    if (supported.mimeTypes.contains(mimeType)) {
-                        mediaType = supported.type;
-                        break;
-                    }
-                }
-            }
-        }
+        const MediaType mediaType = mediaTypeForFile(fileInfo, options, &mimeType);
 
         if (mediaType == MediaType::Unknown)
             continue;
@@ -169,6 +183,7 @@ void QVMediaCatalog::updateCurrentIndex()
             && QFileInfo(currentState.folderFiles[i].absoluteFilePath)
                     == currentState.fileInfo) {
             currentState.currentIndexInFolder = i;
+            currentState.mediaType = currentState.folderFiles[i].mediaType;
             return;
         }
     }

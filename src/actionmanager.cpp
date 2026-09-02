@@ -647,7 +647,7 @@ void ActionManager::initializeActionLibrary()
     actionLibrary.insert("openurl", openUrlAction);
 
     auto *reloadFileAction = new QAction(QIcon::fromTheme("view-refresh"), tr("Re&load File"));
-    reloadFileAction->setData({ "disable" });
+    reloadFileAction->setData({ "mediadisable" });
     actionLibrary.insert("reloadfile", reloadFileAction);
 
     auto *closeWindowAction = new QAction(QIcon::fromTheme("window-close"), tr("Close Window"));
@@ -666,24 +666,24 @@ void ActionManager::initializeActionLibrary()
     //: Open containing folder on macOS
     openContainingFolderAction->setText(tr("Show in &Finder"));
 #endif
-    openContainingFolderAction->setData({ "disable" });
+    openContainingFolderAction->setData({ "mediadisable" });
     actionLibrary.insert("opencontainingfolder", openContainingFolderAction);
 
     auto *showFileInfoAction =
             new QAction(QIcon::fromTheme("document-properties"), tr("Show File &Info"));
-    showFileInfoAction->setData({ "disable" });
+    showFileInfoAction->setData({ "mediadisable" });
     actionLibrary.insert("showfileinfo", showFileInfoAction);
 
     auto *deleteAction = new QAction(QIcon::fromTheme("edit-delete"), tr("&Move to Trash"));
 #ifdef Q_OS_WIN
     deleteAction->setText(tr("&Delete"));
 #endif
-    deleteAction->setData({ "disable" });
+    deleteAction->setData({ "mediadisable" });
     actionLibrary.insert("delete", deleteAction);
 
     auto *deletePermanentAction =
             new QAction(QIcon::fromTheme("edit-delete"), tr("Delete Permanently"));
-    deletePermanentAction->setData({ "disable" });
+    deletePermanentAction->setData({ "mediadisable" });
     actionLibrary.insert("deletepermanent", deletePermanentAction);
 
     auto *undoAction = new QAction(QIcon::fromTheme("edit-undo"), tr("&Restore from Trash"));
@@ -703,7 +703,7 @@ void ActionManager::initializeActionLibrary()
     auto *renameAction =
             new QAction(QIcon::fromTheme("edit-rename", QIcon::fromTheme("document-properties")),
                         tr("R&ename..."));
-    renameAction->setData({ "disable" });
+    renameAction->setData({ "mediadisable" });
     actionLibrary.insert("rename", renameAction);
 
     auto *zoomInAction = new QAction(QIcon::fromTheme("zoom-in"), tr("Zoom &In"));
@@ -772,7 +772,7 @@ void ActionManager::initializeActionLibrary()
     actionLibrary.insert("saveframeas", saveFrameAsAction);
 
     auto *pauseAction = new QAction(QIcon::fromTheme("media-playback-pause"), tr("Pa&use"));
-    pauseAction->setData({ "gifdisable" });
+    pauseAction->setData({ "playbackdisable" });
     actionLibrary.insert("pause", pauseAction);
 
     auto *nextFrameAction = new QAction(QIcon::fromTheme("media-skip-forward"), tr("&Next Frame"));

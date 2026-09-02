@@ -54,6 +54,8 @@ public:
     explicit QVImageCore(QObject *parent = nullptr);
 
     void loadFile(const QString &fileName, bool isReloading = false);
+    void activateExternalMedia(const QString &fileName, QVMediaCatalog::MediaType mediaType);
+    QVMediaCatalog::MediaType mediaTypeForFile(const QFileInfo &fileInfo) const;
     ReadData readFile(const QString &fileName, const QColorSpace &targetColorSpace);
     void loadPixmap(const ReadData &readData);
     void closeImage();
@@ -87,6 +89,7 @@ public:
     const QMovie &getLoadedMovie() const { return loadedMovie; }
     const QVMediaCatalog::State &getCurrentMedia() const { return mediaCatalog.state(); }
     const FileDetails &getImageDetails() const { return currentFileDetails; }
+    bool isLoadInProgress() const { return waitingOnLoad; }
     int getCurrentRotation() const { return currentRotation; }
 
 signals:
@@ -101,6 +104,8 @@ protected:
     FileDetails getEmptyFileDetails();
 
 private:
+    QVMediaCatalog::ScanOptions scanOptions() const;
+
     QPixmap loadedPixmap;
     QMovie loadedMovie;
 

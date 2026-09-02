@@ -377,6 +377,14 @@ void QVApplication::defineFilterLists()
 
     // Build name filter list for file dialogs
     nameFilterList << filterString;
+    if (!videoExtensionList.isEmpty()) {
+        QString videoFilterString = tr("Supported Videos") + " (";
+        for (const QString &extension : videoExtensionList)
+            videoFilterString += "*" + extension + " ";
+        videoFilterString.chop(1);
+        videoFilterString += ")";
+        nameFilterList << videoFilterString;
+    }
     nameFilterList << tr("All Files") + " (*)";
 }
 

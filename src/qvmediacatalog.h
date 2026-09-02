@@ -45,17 +45,20 @@ public:
         QList<MediaFile> folderFiles;
         int currentIndexInFolder = -1;
         bool isLoadRequested = false;
+        MediaType mediaType = MediaType::Unknown;
     };
 
     const State &state() const { return currentState; }
     State &state() { return currentState; }
 
-    void setCurrentFile(const QFileInfo &fileInfo);
+    void setCurrentFile(const QFileInfo &fileInfo, MediaType mediaType = MediaType::Unknown);
     void clearCurrentFile();
     void updateFolder(QString dirPath, const ScanOptions &options);
     void updateCurrentIndex();
 
     static QList<MediaFile> scanFolder(const QString &dirPath, const ScanOptions &options);
+    static MediaType mediaTypeForFile(const QFileInfo &fileInfo, const ScanOptions &options,
+                                      QString *mimeType = nullptr);
     static void sortFiles(QList<MediaFile> &files, int sortMode, bool sortDescending);
 
 private:

@@ -335,7 +335,32 @@ void QVGraphicsView::loadMimeData(const QMimeData *mimeData)
 
 void QVGraphicsView::loadFile(const QString &fileName)
 {
-    imageCore.loadFile(fileName);
+    QString sanitaryFileName = fileName;
+    const QUrl url(fileName);
+    if (url.isLocalFile())
+        sanitaryFileName = url.toLocalFile();
+
+    const QFileInfo fileInfo(sanitaryFileName);
+    sanitaryFileName = fileInfo.absoluteFilePath();
+    if (fileInfo.isDir()) {
+        imageCore.updateFolderInfo(sanitaryFileName);
+        if (getCurrentMedia().folderFiles.isEmpty())
+            closeImage();
+        else
+            loadFile(getCurrentMedia().folderFiles.constFirst().absoluteFilePath);
+        return;
+    }
+
+    const auto mediaType = imageCore.mediaTypeForFile(fileInfo);
+    if (mediaType == QVMediaCatalog::MediaType::Video) {
+        imageCore.activateExternalMedia(sanitaryFileName, mediaType);
+        emit videoFileRequested(sanitaryFileName);
+    } else {
+        if (imageCore.isLoadInProgress())
+            return;
+        emit imageFileRequested();
+        imageCore.loadFile(sanitaryFileName);
+    }
 }
 
 void QVGraphicsView::reloadFile()
@@ -775,6 +800,7 @@ void QVGraphicsView::settingsUpdated()
 
 void QVGraphicsView::closeImage()
 {
+    emit imageFileRequested();
     imageCore.closeImage();
 }
 

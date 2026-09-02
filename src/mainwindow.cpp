@@ -32,6 +32,7 @@
 #include <QNetworkRequest>
 #include <QNetworkReply>
 #include <QTemporaryFile>
+#include <QStackedWidget>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow)
 {
@@ -49,9 +50,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     justLaunchedWithImage = false;
     storedWindowState = Qt::WindowNoState;
 
-    // Initialize graphicsviewkDefaultBufferAlignment
-    graphicsView = new QVGraphicsView(this);
-    centralWidget()->layout()->addWidget(graphicsView);
+    // Keep image and video presentation isolated behind one central media stack.
+    mediaStack = new QStackedWidget(this);
+    graphicsView = new QVGraphicsView(mediaStack);
+    videoView = new QVVideoView(mediaStack);
+    mediaStack->addWidget(graphicsView);
+    mediaStack->addWidget(videoView);
+    centralWidget()->layout()->addWidget(mediaStack);
 
     // Hide fullscreen label by default
     ui->fullscreenLabel->hide();
@@ -61,6 +66,25 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(graphicsView, &QVGraphicsView::updatedLoadedPixmapItem, this,
             &MainWindow::setWindowSize);
     connect(graphicsView, &QVGraphicsView::cancelSlideshow, this, &MainWindow::cancelSlideshow);
+    connect(graphicsView, &QVGraphicsView::imageFileRequested, this, [this]() {
+        videoView->closeVideo();
+        mediaStack->setCurrentWidget(graphicsView);
+    });
+    connect(graphicsView, &QVGraphicsView::videoFileRequested, this,
+            [this](const QString &fileName) {
+                mediaStack->setCurrentWidget(videoView);
+                videoView->loadFile(fileName);
+            });
+    connect(videoView, &QVVideoView::videoLoadedChanged, this, &MainWindow::fileChanged);
+    connect(videoView, &QVVideoView::playbackStateChanged, this, &MainWindow::disableActions);
+    connect(videoView, &QVVideoView::previousFileRequested, this, &MainWindow::previousFile);
+    connect(videoView, &QVVideoView::nextFileRequested, this, &MainWindow::nextFile);
+    connect(videoView, &QVVideoView::fullscreenRequested, this, &MainWindow::toggleFullScreen);
+    connect(videoView, &QVVideoView::errorOccurred, this, [this]() {
+        if (!videoView->errorString().isEmpty())
+            QMessageBox::critical(this, tr("Error"), videoView->errorString());
+        fileChanged();
+    });
 
     // Initialize escape shortcut
     escShortcut = new QShortcut(Qt::Key_Escape, this);
@@ -271,7 +295,7 @@ void MainWindow::paintEvent(QPaintEvent *event)
 
     // Find the top of the viewport to account for the menu bar if it's inside the window
     // and/or the label that displays titlebar text in full screen mode.
-    const int viewportY = graphicsView->mapTo(this, QPoint()).y();
+    const int viewportY = mediaStack->mapTo(this, QPoint()).y();
     // On macOS, part of the viewport may be additionally covered with the window's translucent
     // titlebar due to full size content view.
     const int unobscuredViewportY = qMax(getTitlebarOverlap(), viewportY);
@@ -418,8 +442,12 @@ void MainWindow::disableActions()
                 const auto &cloneData = clone->data().toStringList();
                 if (cloneData.last() == "disable") {
                     clone->setEnabled(getImageDetails().isPixmapLoaded);
+                } else if (cloneData.last() == "mediadisable") {
+                    clone->setEnabled(getIsMediaLoaded());
                 } else if (cloneData.last() == "gifdisable") {
                     clone->setEnabled(getImageDetails().isMovieLoaded);
+                } else if (cloneData.last() == "playbackdisable") {
+                    clone->setEnabled(getImageDetails().isMovieLoaded || videoView->isLoaded());
                 } else if (cloneData.last() == "undodisable") {
                     clone->setEnabled(!lastDeletedFiles.isEmpty()
                                       && !lastDeletedFiles.top().pathInTrash.isEmpty());
@@ -434,7 +462,7 @@ void MainWindow::disableActions()
 
     const auto &openWithMenus = qvApp->getActionManager().getAllClonesOfMenu("openwith", this);
     for (const auto &menu : openWithMenus) {
-        menu->setEnabled(getImageDetails().isPixmapLoaded);
+        menu->setEnabled(getIsMediaLoaded());
     }
 }
 
@@ -505,12 +533,11 @@ void MainWindow::updateWindowTitle()
             newString = QString::number(getCurrentMedia().currentIndexInFolder + 1);
             newString += "/" + QString::number(getCurrentMedia().folderFiles.count());
             newString += " - " + getCurrentMedia().fileInfo.fileName();
-            if (!getImageDetails().errorData.hasError) {
+            if (getImageDetails().isPixmapLoaded && !getImageDetails().errorData.hasError) {
                 newString += " - " + QString::number(getImageDetails().baseImageSize.width());
                 newString += "x" + QString::number(getImageDetails().baseImageSize.height());
-                newString +=
-                        " - " + QVInfoDialog::formatBytes(getCurrentMedia().fileInfo.size());
             }
+            newString += " - " + QVInfoDialog::formatBytes(getCurrentMedia().fileInfo.size());
             newString += " - qView";
             break;
         }
@@ -528,7 +555,7 @@ void MainWindow::updateWindowFilePath()
     if (!windowHandle())
         return;
 
-    const bool shouldPopulate = getImageDetails().isPixmapLoaded;
+    const bool shouldPopulate = getIsMediaLoaded();
     windowHandle()->setFilePath(shouldPopulate ? getCurrentMedia().fileInfo.absoluteFilePath()
                                                : "");
 }
@@ -650,6 +677,11 @@ bool MainWindow::getIsPixmapLoaded() const
     return getImageDetails().isPixmapLoaded;
 }
 
+bool MainWindow::getIsMediaLoaded() const
+{
+    return getImageDetails().isPixmapLoaded || videoView->isLoaded();
+}
+
 void MainWindow::setJustLaunchedWithImage(bool value)
 {
     justLaunchedWithImage = value;
@@ -737,7 +769,10 @@ void MainWindow::pickUrl()
 
 void MainWindow::reloadFile()
 {
-    graphicsView->reloadFile();
+    if (getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video)
+        videoView->reloadFile();
+    else
+        graphicsView->reloadFile();
 }
 
 void MainWindow::openWith(const OpenWith::OpenWithItem &openWithItem)
@@ -747,7 +782,7 @@ void MainWindow::openWith(const OpenWith::OpenWithItem &openWithItem)
 
 void MainWindow::openContainingFolder()
 {
-    if (!getImageDetails().isPixmapLoaded)
+    if (!getIsMediaLoaded())
         return;
 
     const QFileInfo selectedFileInfo = getCurrentMedia().fileInfo;
@@ -827,6 +862,7 @@ void MainWindow::deleteFile(bool permanent)
     const QString filePath = fileInfo.absoluteFilePath();
     const QString fileName = fileInfo.fileName();
 
+    videoView->closeVideo();
     graphicsView->closeImage();
 
     bool success;
@@ -970,12 +1006,13 @@ void MainWindow::paste()
 
 void MainWindow::rename()
 {
-    if (!getImageDetails().isPixmapLoaded)
+    if (!getIsMediaLoaded())
         return;
 
     auto *renameDialog = new QVRenameDialog(this, getCurrentMedia().fileInfo);
     connect(renameDialog, &QVRenameDialog::newFileToOpen, this, &MainWindow::openFile);
     connect(renameDialog, &QVRenameDialog::readyToRenameFile, this, [this]() {
+        videoView->closeVideo();
         if (auto device = graphicsView->getLoadedMovie().device()) {
             device->close();
         }
@@ -1079,6 +1116,22 @@ void MainWindow::saveFrameAs()
 
 void MainWindow::pause()
 {
+    const bool isVideo = getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video;
+    if (isVideo) {
+        if (!videoView->isLoaded())
+            return;
+
+        videoView->togglePaused();
+        const auto pauseActions = qvApp->getActionManager().getAllClonesOfAction("pause", this);
+        for (const auto &pauseAction : pauseActions) {
+            pauseAction->setText(videoView->isPlaying() ? tr("Pause") : tr("Res&ume"));
+            pauseAction->setIcon(QIcon::fromTheme(videoView->isPlaying()
+                                                          ? "media-playback-pause"
+                                                          : "media-playback-start"));
+        }
+        return;
+    }
+
     if (!getImageDetails().isMovieLoaded)
         return;
 

@@ -2,7 +2,7 @@
 # This CMakeLists.txt should be included by the parent project
 
 # Find Qt Test component and other dependencies
-find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Core Gui Multimedia Network Widgets Svg Test REQUIRED)
+find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Core Gui Multimedia MultimediaWidgets Network Widgets Svg Test REQUIRED)
 
 # Get the same source files as the main project
 set(TEST_SOURCES
@@ -19,6 +19,7 @@ set(TEST_SOURCES
     ../src/qvimagecore.cpp
     ../src/qvmediacatalog.cpp
     ../src/qvmediaformats.cpp
+    ../src/qvvideoview.cpp
     ../src/qvshortcutdialog.cpp
     ../src/actionmanager.cpp
     ../src/settingsmanager.cpp
@@ -60,6 +61,7 @@ target_link_libraries(actionmanagertests PRIVATE
     Qt${QT_VERSION_MAJOR}::Core 
     Qt${QT_VERSION_MAJOR}::Gui 
     Qt${QT_VERSION_MAJOR}::Multimedia
+    Qt${QT_VERSION_MAJOR}::MultimediaWidgets
     Qt${QT_VERSION_MAJOR}::Network 
     Qt${QT_VERSION_MAJOR}::Widgets 
     Qt${QT_VERSION_MAJOR}::Svg 

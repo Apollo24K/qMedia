@@ -60,6 +60,14 @@ void MediaCatalogTests::scansAndClassifiesSupportedMedia()
 
     QCOMPARE(types.value("photo.JPG"), QVMediaCatalog::MediaType::Image);
     QCOMPARE(types.value("clip.mp4"), QVMediaCatalog::MediaType::Video);
+
+    const QFileInfo videoFile(directory.path() + "/clip.mp4");
+    QCOMPARE(QVMediaCatalog::mediaTypeForFile(videoFile, mixedMediaOptions()),
+             QVMediaCatalog::MediaType::Video);
+
+    QVMediaCatalog catalog;
+    catalog.setCurrentFile(videoFile, QVMediaCatalog::MediaType::Video);
+    QCOMPARE(catalog.state().mediaType, QVMediaCatalog::MediaType::Video);
 }
 
 void MediaCatalogTests::sortsUsingRequestedMode()
@@ -95,6 +103,7 @@ void MediaCatalogTests::tracksCurrentFileIndex()
 
     QCOMPARE(catalog.state().folderFiles.size(), 2);
     QVERIFY(catalog.state().currentIndexInFolder >= 0);
+    QCOMPARE(catalog.state().mediaType, QVMediaCatalog::MediaType::Image);
     QCOMPARE(catalog.state()
                      .folderFiles.at(catalog.state().currentIndexInFolder)
                      .absoluteFilePath,

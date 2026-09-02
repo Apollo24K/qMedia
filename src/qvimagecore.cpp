@@ -67,15 +67,6 @@ void QVImageCore::loadFile(const QString &fileName, bool isReloading)
     QFileInfo fileInfo(sanitaryFileName);
     sanitaryFileName = fileInfo.absoluteFilePath();
 
-    if (fileInfo.isDir()) {
-        updateFolderInfo(sanitaryFileName);
-        if (mediaCatalog.state().folderFiles.isEmpty())
-            closeImage();
-        else
-            loadFile(mediaCatalog.state().folderFiles.at(0).absoluteFilePath);
-        return;
-    }
-
     // Pause playing movie because it feels better that way
     setPaused(true);
 
@@ -104,6 +95,23 @@ void QVImageCore::loadFile(const QString &fileName, bool isReloading)
                                                       sanitaryFileName, targetColorSpace));
 #endif
     }
+}
+
+void QVImageCore::activateExternalMedia(const QString &fileName,
+                                        QVMediaCatalog::MediaType mediaType)
+{
+    setPaused(true);
+    currentFileDetails = getEmptyFileDetails();
+    mediaCatalog.state().isLoadRequested = true;
+    mediaCatalog.setCurrentFile(QFileInfo(fileName), mediaType);
+    if (mediaCatalog.state().currentIndexInFolder == -1)
+        updateFolderInfo();
+    loadEmptyPixmap();
+}
+
+QVMediaCatalog::MediaType QVImageCore::mediaTypeForFile(const QFileInfo &fileInfo) const
+{
+    return QVMediaCatalog::mediaTypeForFile(fileInfo, scanOptions());
 }
 
 QVImageCore::ReadData QVImageCore::readFile(const QString &fileName,
@@ -168,6 +176,14 @@ QVImageCore::ReadData QVImageCore::readFile(const QString &fileName,
 
 void QVImageCore::loadPixmap(const ReadData &readData)
 {
+    // An image decode may finish after the user has switched to a video. Keep the
+    // decoded image available for later navigation without replacing the active video.
+    if (mediaCatalog.state().mediaType == QVMediaCatalog::MediaType::Video) {
+        waitingOnLoad = false;
+        addToCache(std::move(readData));
+        return;
+    }
+
     if (readData.errorData.hasError) {
         currentFileDetails = getEmptyFileDetails();
         currentFileDetails.errorData = readData.errorData;
@@ -259,15 +275,23 @@ QVImageCore::FileDetails QVImageCore::getEmptyFileDetails()
 
 void QVImageCore::updateFolderInfo(QString dirPath)
 {
+    mediaCatalog.updateFolder(dirPath, scanOptions());
+}
+
+QVMediaCatalog::ScanOptions QVImageCore::scanOptions() const
+{
     QVMediaCatalog::ScanOptions options;
     options.supportedMedia.append({ QVMediaCatalog::MediaType::Image,
                                     qvApp->getFileExtensionList(),
                                     qvApp->getMimeTypeNameList() });
+    options.supportedMedia.append({ QVMediaCatalog::MediaType::Video,
+                                    qvApp->getVideoExtensionList(),
+                                    qvApp->getVideoMimeTypeNameList() });
     options.allowMimeContentDetection = qvGetSettingBool(AllowMimeContentDetection);
     options.includeHidden = !qvApp->getSettingsManager().getBool("skiphidden");
     options.sortMode = qvGetSettingInt(SortMode);
     options.sortDescending = qvGetSettingBool(SortDescending);
-    mediaCatalog.updateFolder(dirPath, options);
+    return options;
 }
 
 void QVImageCore::requestCaching()
@@ -306,6 +330,9 @@ void QVImageCore::requestCaching()
         // if still out of range after looping, just cancel the cache for this index
         if (index > mediaState.folderFiles.length() - 1 || index < 0
             || mediaState.folderFiles.isEmpty())
+            continue;
+
+        if (mediaState.folderFiles[index].mediaType != QVMediaCatalog::MediaType::Image)
             continue;
 
         QString filePath = mediaState.folderFiles[index].absoluteFilePath;
