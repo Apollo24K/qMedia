@@ -47,6 +47,21 @@ ctest --test-dir build-tests -C Debug --output-on-failure
 
 `QT_QPA_PLATFORM=offscreen` keeps the widget tests from opening visible windows.
 
+## Optional image-format plugins
+
+Qt does not include an APNG decoder in its standard image-format package. To add
+APNG animation support to a local build, deploy qMedia's matching QtApng plugin
+beside the executable:
+
+```powershell
+./dist/scripts/download-plugins.ps1 -DestinationRoot build-nmake -ApngOnly
+```
+
+Omit `-ApngOnly` when preparing a distribution to include the additional
+KImageFormats decoders as well. The plugin version is selected from the active
+Qt installation, so run the script in the same configured Qt environment used
+for the build.
+
 ## Deployment note
 
 Run `windeployqt` when creating a standalone Windows build. Once the application

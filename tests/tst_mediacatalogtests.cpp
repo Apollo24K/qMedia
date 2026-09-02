@@ -122,6 +122,9 @@ void MediaCatalogTests::discoversNormalizedVideoFormats()
     QVERIFY(!formats.extensions.isEmpty());
     QVERIFY(!formats.mimeTypes.isEmpty());
     QVERIFY(formats.extensions.contains(".mp4"));
+    QVERIFY(formats.extensions.contains(".mov"));
+    QVERIFY(formats.extensions.contains(".flv"));
+    QVERIFY(formats.extensions.contains(".vob"));
     QVERIFY(!formats.extensions.contains(".mp3"));
 
     QSet<QString> uniqueExtensions;

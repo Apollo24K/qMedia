@@ -45,6 +45,7 @@ static const SettingDefinition settingDefinitions[] = {
     { SettingsManager::Setting::ColorSpaceConversion, 1, "colorspaceconversion" },
     // Miscellaneous settings
     { SettingsManager::Setting::Language, "system", "language" },
+    { SettingsManager::Setting::MediaBackend, "ffmpeg", "mediabackend" },
     { SettingsManager::Setting::SortMode, 0, "sortmode" },
     { SettingsManager::Setting::SortDescending, false, "sortdescending" },
     { SettingsManager::Setting::PreloadingMode, 1, "preloadingmode" },

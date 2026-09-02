@@ -120,11 +120,40 @@ Root: HKA; Subkey: "SOFTWARE\Classes\.pcx\OpenWithProgids"; ValueType: string; V
 Root: HKA; Subkey: "SOFTWARE\Classes\.pic\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
 Root: HKA; Subkey: "SOFTWARE\Classes\.psd\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
 Root: HKA; Subkey: "SOFTWARE\Classes\.ras\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
-Root: HKA; Subkey. Subkey: "SOFTWARE\Classes\.rgb\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.rgb\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
 Root: HKA; Subkey: "SOFTWARE\Classes\.rgba\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
 Root: HKA; Subkey: "SOFTWARE\Classes\.sgi\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
 Root: HKA; Subkey: "SOFTWARE\Classes\.tga\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
 Root: HKA; Subkey: "SOFTWARE\Classes\.xcf\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+; videos
+Root: HKA; Subkey: "SOFTWARE\Classes\.3g2\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.3gp\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.asf\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.avi\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.divx\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.dv\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.f4v\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.flv\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.m1v\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.m2ts\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.m2v\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.m4v\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.mkv\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.mov\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.mp4\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.mpe\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.mpeg\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.mpg\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.mpv\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.mts\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.mxf\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.ogm\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.ogv\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.qt\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.ts\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.vob\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.webm\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
+Root: HKA; Subkey: "SOFTWARE\Classes\.wmv\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppName}.1"; ValueData: ""; Flags: uninsdeletevalue; Tasks: fileassociation
 
 ; Capabilities keys for default programs/apps to work
 Root: HKA; Subkey: "Software\{#MyAppName}"; Flags: uninsdeletekey; Tasks: fileassociation
@@ -175,6 +204,35 @@ Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueT
 Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".sgi"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
 Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".tga"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
 Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".xcf"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+; videos
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".3g2"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".3gp"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".asf"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".avi"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".divx"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".dv"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".f4v"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".flv"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".m1v"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".m2ts"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".m2v"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".m4v"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mkv"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mov"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mp4"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mpe"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mpeg"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mpg"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mpv"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mts"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mxf"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".ogm"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".ogv"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".qt"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".ts"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".vob"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".webm"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".wmv"; ValueData: "{#MyAppName}.1"; Tasks: fileassociation
 
 Root: HKA; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "qMedia"; ValueData: "Software\qMedia\Capabilities"; Flags: uninsdeletevalue; Tasks: fileassociation
 

@@ -1,6 +1,7 @@
 #include <QtTest>
 
 #include "qvapplication.h"
+#include "qvoptionsdialog.h"
 #include <QFile>
 #include <QImage>
 #include <QTemporaryDir>
@@ -17,6 +18,7 @@ private slots:
     void testClonedActionsUntracked();
     void testCanvasActionsSupportAllVisualMedia();
     void testPlaybackActionsAndDefaultShortcuts();
+    void testMediaBackendSetting();
     void testImageRequestAfterVideoIsNotDiscarded();
 };
 
@@ -101,6 +103,19 @@ void ActionManagerTests::testPlaybackActionsAndDefaultShortcuts()
         QVERIFY(defaultShortcuts.value("seekposition" + QString::number(position))
                         .contains(QKeySequence(Qt::Key_0 + position).toString()));
     }
+}
+
+void ActionManagerTests::testMediaBackendSetting()
+{
+    QCOMPARE(qvApp->getSettingsManager().getString(SettingsManager::Setting::MediaBackend, true),
+             QString("ffmpeg"));
+
+    QVOptionsDialog dialog;
+    auto *backendComboBox = dialog.findChild<QComboBox *>("mediaBackendComboBox");
+    QVERIFY(backendComboBox);
+    QCOMPARE(backendComboBox->count(), 2);
+    QCOMPARE(backendComboBox->itemData(0).toString(), QString("ffmpeg"));
+    QCOMPARE(backendComboBox->itemData(1).toString(), QString("windows"));
 }
 
 void ActionManagerTests::testImageRequestAfterVideoIsNotDiscarded()

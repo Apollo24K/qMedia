@@ -62,6 +62,8 @@ private slots:
 
     void languageComboBoxCurrentIndexChanged(int index);
 
+    void mediaBackendComboBoxCurrentIndexChanged(int index);
+
     void scrollZoomsComboBoxCurrentIndexChanged(int index);
 
 private:
@@ -72,6 +74,7 @@ private:
     QList<QStringList> transientShortcuts;
 
     bool languageRestartMessageShown;
+    bool mediaBackendRestartMessageShown;
 };
 
 #endif // QVOPTIONSDIALOG_H

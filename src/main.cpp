@@ -24,6 +24,20 @@ void migrateLegacySettings()
     currentSettings.setValue(migrationKey, true);
     currentSettings.sync();
 }
+
+#if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+QByteArray configuredMediaBackend()
+{
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("options"));
+    const QString backend = settings.value(QStringLiteral("mediabackend"),
+                                           QStringLiteral("ffmpeg"))
+                                    .toString()
+                                    .toLower();
+    return backend == QStringLiteral("windows") ? QByteArrayLiteral("windows")
+                                                 : QByteArrayLiteral("ffmpeg");
+}
+#endif
 }
 
 int main(int argc, char *argv[])
@@ -36,11 +50,11 @@ int main(int argc, char *argv[])
     QCoreApplication::setApplicationVersion(QString::number(VERSION));
     migrateLegacySettings();
 #if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    // The native backend provides working audio on Windows installations where
-    // Qt's FFmpeg backend decodes video but produces no audible output. Preserve
-    // an explicit override for troubleshooting and format-compatibility testing.
+    // Backend selection is process-wide and must happen before constructing the
+    // application or any multimedia object. Preserve an explicit environment
+    // override for troubleshooting and scripted launches.
     if (qEnvironmentVariableIsEmpty("QT_MEDIA_BACKEND"))
-        qputenv("QT_MEDIA_BACKEND", QByteArrayLiteral("windows"));
+        qputenv("QT_MEDIA_BACKEND", configuredMediaBackend());
 #endif
     QVApplication app(argc, argv);
     app.setWindowIcon(QIcon(QStringLiteral(":/images/qMedia-icon.png")));

@@ -41,6 +41,7 @@ public:
         ColorSpaceConversion,
         // Miscellaneous settings
         Language,
+        MediaBackend,
         SortMode,
         SortDescending,
         PreloadingMode,

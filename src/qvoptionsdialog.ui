@@ -978,6 +978,30 @@
             </property>
            </widget>
           </item>
+          <item row="18" column="0">
+           <widget class="QLabel" name="mediaBackendLabel">
+            <property name="text">
+             <string>Video backend:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="18" column="1">
+           <widget class="QComboBox" name="mediaBackendComboBox">
+            <property name="toolTip">
+             <string>FFmpeg supports more video formats. Windows Media Foundation can improve audio compatibility when Windows Audio Enhancements are enabled.</string>
+            </property>
+           </widget>
+          </item>
+          <item row="19" column="1">
+           <widget class="QLabel" name="mediaBackendRestartLabel">
+            <property name="text">
+             <string>Restart qMedia to apply backend changes.</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
          </layout>
         </widget>
        </widget>

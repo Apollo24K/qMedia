@@ -68,6 +68,34 @@
 				<string>sgi</string>
 				<string>tga</string>
 				<string>xcf</string>
+				<string>3g2</string>
+				<string>3gp</string>
+				<string>asf</string>
+				<string>avi</string>
+				<string>divx</string>
+				<string>dv</string>
+				<string>f4v</string>
+				<string>flv</string>
+				<string>m1v</string>
+				<string>m2ts</string>
+				<string>m2v</string>
+				<string>m4v</string>
+				<string>mkv</string>
+				<string>mov</string>
+				<string>mp4</string>
+				<string>mpe</string>
+				<string>mpeg</string>
+				<string>mpg</string>
+				<string>mpv</string>
+				<string>mts</string>
+				<string>mxf</string>
+				<string>ogm</string>
+				<string>ogv</string>
+				<string>qt</string>
+				<string>ts</string>
+				<string>vob</string>
+				<string>webm</string>
+				<string>wmv</string>
 			</array>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>

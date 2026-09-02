@@ -20,6 +20,12 @@ QVOptionsDialog::QVOptionsDialog(QWidget *parent) : QDialog(parent), ui(new Ui::
     ui->ctrlDragCheckbox->setToolTip(ui->ctrlDragCheckbox->toolTip().arg(ctrlString));
 
     languageRestartMessageShown = false;
+    mediaBackendRestartMessageShown = false;
+
+    ui->mediaBackendComboBox->addItem(tr("FFmpeg (broad format support)"),
+                                      QStringLiteral("ffmpeg"));
+    ui->mediaBackendComboBox->addItem(tr("Windows Media Foundation (audio compatibility)"),
+                                      QStringLiteral("windows"));
 
     setAttribute(Qt::WA_DeleteOnClose);
     setWindowFlags(windowFlags() & (~Qt::WindowContextHelpButtonHint | Qt::CustomizeWindowHint));
@@ -75,6 +81,12 @@ QVOptionsDialog::QVOptionsDialog(QWidget *parent) : QDialog(parent), ui(new Ui::
     ui->quitOnLastWindowCheckbox->hide();
 #endif
 
+#if !defined Q_OS_WIN || QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    ui->mediaBackendLabel->hide();
+    ui->mediaBackendComboBox->hide();
+    ui->mediaBackendRestartLabel->hide();
+#endif
+
 // Hide language selection below 5.12, as 5.12 does not support embedding the translations :(
 #if (QT_VERSION < QT_VERSION_CHECK(5, 12, 0))
     ui->langComboBox->hide();
@@ -92,6 +104,9 @@ QVOptionsDialog::QVOptionsDialog(QWidget *parent) : QDialog(parent), ui(new Ui::
             &QVOptionsDialog::windowResizeComboBoxCurrentIndexChanged);
     connect(ui->langComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             &QVOptionsDialog::languageComboBoxCurrentIndexChanged);
+    connect(ui->mediaBackendComboBox,
+            QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &QVOptionsDialog::mediaBackendComboBoxCurrentIndexChanged);
     connect(ui->scrollZoomsComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             &QVOptionsDialog::scrollZoomsComboBoxCurrentIndexChanged);
     syncShortcuts();
@@ -216,6 +231,8 @@ void QVOptionsDialog::syncSettings(bool defaults, bool makeConnections)
                  makeConnections);
     // language
     syncComboBoxData(ui->langComboBox, "language", defaults, makeConnections);
+    // media backend
+    syncComboBoxData(ui->mediaBackendComboBox, "mediabackend", defaults, makeConnections);
     // sortmode
     syncComboBox(ui->sortComboBox, "sortmode", defaults, makeConnections);
     // sortdescending
@@ -540,6 +557,16 @@ void QVOptionsDialog::languageComboBoxCurrentIndexChanged(int index)
         QMessageBox::information(this, tr("Restart Required"),
                                  tr("You must restart qMedia to change the language."));
         languageRestartMessageShown = true;
+    }
+}
+
+void QVOptionsDialog::mediaBackendComboBoxCurrentIndexChanged(int index)
+{
+    Q_UNUSED(index)
+    if (!mediaBackendRestartMessageShown) {
+        QMessageBox::information(this, tr("Restart Required"),
+                                 tr("You must restart qMedia to change the video backend."));
+        mediaBackendRestartMessageShown = true;
     }
 }
 
