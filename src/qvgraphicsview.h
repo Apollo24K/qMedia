@@ -50,10 +50,8 @@ public:
     void setSpeed(const int &desiredSpeed);
     void rotateImage(int rotation);
 
-    const QVImageCore::FileDetails &getCurrentFileDetails() const
-    {
-        return imageCore.getCurrentFileDetails();
-    }
+    const QVMediaCatalog::State &getCurrentMedia() const { return imageCore.getCurrentMedia(); }
+    const QVImageCore::FileDetails &getImageDetails() const { return imageCore.getImageDetails(); }
     const QPixmap &getLoadedPixmap() const { return imageCore.getLoadedPixmap(); }
     const QMovie &getLoadedMovie() const { return imageCore.getLoadedMovie(); }
 

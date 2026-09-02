@@ -11,6 +11,8 @@
 #include <QCache>
 #include <QElapsedTimer>
 
+#include "qvmediacatalog.h"
+
 #if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
 #  include <QColorSpace>
 #else
@@ -22,18 +24,6 @@ class QVImageCore : public QObject
     Q_OBJECT
 
 public:
-    struct CompatibleFile
-    {
-        QString absoluteFilePath;
-        QString fileName;
-
-        // Only populated if needed for sorting
-        qint64 lastModified;
-        qint64 lastCreated;
-        qint64 size;
-        QString mimeType;
-    };
-
     struct ErrorData
     {
         bool hasError = false;
@@ -43,32 +33,12 @@ public:
 
     struct FileDetails
     {
-        QFileInfo fileInfo;
-        QList<CompatibleFile> folderFileInfoList;
-        int loadedIndexInFolder = -1;
-        bool isLoadRequested = false;
         bool isPixmapLoaded = false;
         bool isMovieLoaded = false;
         QSize baseImageSize;
         QSize loadedPixmapSize;
         QElapsedTimer timeSinceLoaded;
         ErrorData errorData;
-
-        void updateLoadedIndexInFolder();
-    };
-
-    struct DirInfo
-    {
-        QString dirPath;
-        qsizetype fileCount;
-        int sortMode;
-        bool sortDescending;
-
-        bool operator!=(const DirInfo &other) const
-        {
-            return dirPath != other.dirPath || fileCount != other.fileCount
-                    || sortMode != other.sortMode || sortDescending != other.sortDescending;
-        }
     };
 
     struct ReadData
@@ -87,7 +57,6 @@ public:
     ReadData readFile(const QString &fileName, const QColorSpace &targetColorSpace);
     void loadPixmap(const ReadData &readData);
     void closeImage();
-    QList<CompatibleFile> getCompatibleFiles(const QString &dirPath) const;
     void updateFolderInfo(QString dirPath = QString());
     void requestCaching();
     void requestCachingFile(const QString &filePath, const QColorSpace &targetColorSpace);
@@ -116,7 +85,8 @@ public:
     // returned const reference is read-only
     const QPixmap &getLoadedPixmap() const { return loadedPixmap; }
     const QMovie &getLoadedMovie() const { return loadedMovie; }
-    const FileDetails &getCurrentFileDetails() const { return currentFileDetails; }
+    const QVMediaCatalog::State &getCurrentMedia() const { return mediaCatalog.state(); }
+    const FileDetails &getImageDetails() const { return currentFileDetails; }
     int getCurrentRotation() const { return currentRotation; }
 
 signals:
@@ -134,6 +104,7 @@ private:
     QPixmap loadedPixmap;
     QMovie loadedMovie;
 
+    QVMediaCatalog mediaCatalog;
     FileDetails currentFileDetails;
     int currentRotation;
 
@@ -142,8 +113,6 @@ private:
     int colorSpaceConversion;
 
     static QCache<QString, ReadData> imageCache;
-
-    DirInfo lastDirInfo;
 
     QStringList lastFilesPreloaded;
     QStringList preloadFilesInProgress;

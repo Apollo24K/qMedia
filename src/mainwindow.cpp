@@ -290,12 +290,12 @@ void MainWindow::paintEvent(QPaintEvent *event)
 
     // If there's an error message, draw it centered inside the unobscured area of the viewport.
     const QRect unobscuredViewportRect = rect().adjusted(0, unobscuredViewportY, 0, 0);
-    if (getCurrentFileDetails().errorData.hasError && unobscuredViewportRect.isValid()) {
-        const QVImageCore::ErrorData &errorData = getCurrentFileDetails().errorData;
+    if (getImageDetails().errorData.hasError && unobscuredViewportRect.isValid()) {
+        const QVImageCore::ErrorData &errorData = getImageDetails().errorData;
         const QString errorMessage =
                 tr("Error occurred opening\n%3\n%2 (Error %1)")
                         .arg(QString::number(errorData.errorNum), errorData.errorString,
-                             getCurrentFileDetails().fileInfo.fileName());
+                             getCurrentMedia().fileInfo.fileName());
         painter.setFont(font());
         painter.setPen(QVApplication::getPerceivedBrightness(backgroundColor) > 0.5 ? Qt::black
                                                                                     : Qt::white);
@@ -417,14 +417,14 @@ void MainWindow::disableActions()
             for (const auto &clone : clonesOfAction) {
                 const auto &cloneData = clone->data().toStringList();
                 if (cloneData.last() == "disable") {
-                    clone->setEnabled(getCurrentFileDetails().isPixmapLoaded);
+                    clone->setEnabled(getImageDetails().isPixmapLoaded);
                 } else if (cloneData.last() == "gifdisable") {
-                    clone->setEnabled(getCurrentFileDetails().isMovieLoaded);
+                    clone->setEnabled(getImageDetails().isMovieLoaded);
                 } else if (cloneData.last() == "undodisable") {
                     clone->setEnabled(!lastDeletedFiles.isEmpty()
                                       && !lastDeletedFiles.top().pathInTrash.isEmpty());
                 } else if (cloneData.last() == "folderdisable") {
-                    clone->setEnabled(!getCurrentFileDetails().folderFileInfoList.isEmpty());
+                    clone->setEnabled(!getCurrentMedia().folderFiles.isEmpty());
                 } else if (cloneData.last() == "windowdisable") {
                     clone->setEnabled(true);
                 }
@@ -434,14 +434,14 @@ void MainWindow::disableActions()
 
     const auto &openWithMenus = qvApp->getActionManager().getAllClonesOfMenu("openwith", this);
     for (const auto &menu : openWithMenus) {
-        menu->setEnabled(getCurrentFileDetails().isPixmapLoaded);
+        menu->setEnabled(getImageDetails().isPixmapLoaded);
     }
 }
 
 void MainWindow::requestPopulateOpenWithMenu()
 {
     openWithFutureWatcher.setFuture(QtConcurrent::run([&] {
-        const auto &curFilePath = getCurrentFileDetails().fileInfo.absoluteFilePath();
+        const auto &curFilePath = getCurrentMedia().fileInfo.absoluteFilePath();
         return OpenWith::getOpenWithItems(curFilePath);
     }));
 }
@@ -478,38 +478,38 @@ void MainWindow::populateOpenWithMenu(const QList<OpenWith::OpenWithItem> openWi
 void MainWindow::refreshProperties()
 {
     int value4;
-    if (getCurrentFileDetails().isMovieLoaded)
+    if (getImageDetails().isMovieLoaded)
         value4 = graphicsView->getLoadedMovie().frameCount();
     else
         value4 = 0;
-    info->setInfo(getCurrentFileDetails().fileInfo, getCurrentFileDetails().baseImageSize.width(),
-                  getCurrentFileDetails().baseImageSize.height(), value4);
+    info->setInfo(getCurrentMedia().fileInfo, getImageDetails().baseImageSize.width(),
+                  getImageDetails().baseImageSize.height(), value4);
 }
 
 void MainWindow::updateWindowTitle()
 {
     QString newString = "qView";
-    if (getCurrentFileDetails().fileInfo.isFile()) {
+    if (getCurrentMedia().fileInfo.isFile()) {
         switch (qvApp->getSettingsManager().getInt(SettingsManager::Setting::TitleBarMode)) {
         case 1: {
-            newString = getCurrentFileDetails().fileInfo.fileName();
+            newString = getCurrentMedia().fileInfo.fileName();
             break;
         }
         case 2: {
-            newString = QString::number(getCurrentFileDetails().loadedIndexInFolder + 1);
-            newString += "/" + QString::number(getCurrentFileDetails().folderFileInfoList.count());
-            newString += " - " + getCurrentFileDetails().fileInfo.fileName();
+            newString = QString::number(getCurrentMedia().currentIndexInFolder + 1);
+            newString += "/" + QString::number(getCurrentMedia().folderFiles.count());
+            newString += " - " + getCurrentMedia().fileInfo.fileName();
             break;
         }
         case 3: {
-            newString = QString::number(getCurrentFileDetails().loadedIndexInFolder + 1);
-            newString += "/" + QString::number(getCurrentFileDetails().folderFileInfoList.count());
-            newString += " - " + getCurrentFileDetails().fileInfo.fileName();
-            if (!getCurrentFileDetails().errorData.hasError) {
-                newString += " - " + QString::number(getCurrentFileDetails().baseImageSize.width());
-                newString += "x" + QString::number(getCurrentFileDetails().baseImageSize.height());
+            newString = QString::number(getCurrentMedia().currentIndexInFolder + 1);
+            newString += "/" + QString::number(getCurrentMedia().folderFiles.count());
+            newString += " - " + getCurrentMedia().fileInfo.fileName();
+            if (!getImageDetails().errorData.hasError) {
+                newString += " - " + QString::number(getImageDetails().baseImageSize.width());
+                newString += "x" + QString::number(getImageDetails().baseImageSize.height());
                 newString +=
-                        " - " + QVInfoDialog::formatBytes(getCurrentFileDetails().fileInfo.size());
+                        " - " + QVInfoDialog::formatBytes(getCurrentMedia().fileInfo.size());
             }
             newString += " - qView";
             break;
@@ -528,14 +528,14 @@ void MainWindow::updateWindowFilePath()
     if (!windowHandle())
         return;
 
-    const bool shouldPopulate = getCurrentFileDetails().isPixmapLoaded;
-    windowHandle()->setFilePath(shouldPopulate ? getCurrentFileDetails().fileInfo.absoluteFilePath()
+    const bool shouldPopulate = getImageDetails().isPixmapLoaded;
+    windowHandle()->setFilePath(shouldPopulate ? getCurrentMedia().fileInfo.absoluteFilePath()
                                                : "");
 }
 
 void MainWindow::setWindowSize()
 {
-    if (!getCurrentFileDetails().isPixmapLoaded)
+    if (!getImageDetails().isPixmapLoaded)
         return;
 
     // check if the program is configured to resize the window
@@ -557,7 +557,7 @@ void MainWindow::setWindowSize()
             qvApp->getSettingsManager().getInt(SettingsManager::Setting::MaxWindowResizedPercentage)
             / 100.0;
 
-    QSize imageSize = getCurrentFileDetails().loadedPixmapSize;
+    QSize imageSize = getImageDetails().loadedPixmapSize;
     imageSize -= QSize(4, 4);
 
     // Try to grab the current screen
@@ -647,7 +647,7 @@ QScreen *MainWindow::screenContaining(const QRect &rect)
 
 bool MainWindow::getIsPixmapLoaded() const
 {
-    return getCurrentFileDetails().isPixmapLoaded;
+    return getImageDetails().isPixmapLoaded;
 }
 
 void MainWindow::setJustLaunchedWithImage(bool value)
@@ -742,15 +742,15 @@ void MainWindow::reloadFile()
 
 void MainWindow::openWith(const OpenWith::OpenWithItem &openWithItem)
 {
-    OpenWith::openWith(getCurrentFileDetails().fileInfo.absoluteFilePath(), openWithItem);
+    OpenWith::openWith(getCurrentMedia().fileInfo.absoluteFilePath(), openWithItem);
 }
 
 void MainWindow::openContainingFolder()
 {
-    if (!getCurrentFileDetails().isPixmapLoaded)
+    if (!getImageDetails().isPixmapLoaded)
         return;
 
-    const QFileInfo selectedFileInfo = getCurrentFileDetails().fileInfo;
+    const QFileInfo selectedFileInfo = getCurrentMedia().fileInfo;
 
 #ifdef Q_OS_WIN
     QProcess::startDetached(
@@ -778,8 +778,8 @@ void MainWindow::askDeleteFile(bool permanent)
         return;
     }
 
-    const QFileInfo &fileInfo = getCurrentFileDetails().fileInfo;
-    const QString fileName = getCurrentFileDetails().fileInfo.fileName();
+    const QFileInfo &fileInfo = getCurrentMedia().fileInfo;
+    const QString fileName = getCurrentMedia().fileInfo.fileName();
 
     if (!fileInfo.isWritable()) {
         QMessageBox::critical(
@@ -823,7 +823,7 @@ void MainWindow::askDeleteFile(bool permanent)
 
 void MainWindow::deleteFile(bool permanent)
 {
-    const QFileInfo &fileInfo = getCurrentFileDetails().fileInfo;
+    const QFileInfo &fileInfo = getCurrentMedia().fileInfo;
     const QString filePath = fileInfo.absoluteFilePath();
     const QString fileName = fileInfo.fileName();
 
@@ -970,10 +970,10 @@ void MainWindow::paste()
 
 void MainWindow::rename()
 {
-    if (!getCurrentFileDetails().isPixmapLoaded)
+    if (!getImageDetails().isPixmapLoaded)
         return;
 
-    auto *renameDialog = new QVRenameDialog(this, getCurrentFileDetails().fileInfo);
+    auto *renameDialog = new QVRenameDialog(this, getCurrentMedia().fileInfo);
     connect(renameDialog, &QVRenameDialog::newFileToOpen, this, &MainWindow::openFile);
     connect(renameDialog, &QVRenameDialog::readyToRenameFile, this, [this]() {
         if (auto device = graphicsView->getLoadedMovie().device()) {
@@ -1052,7 +1052,7 @@ void MainWindow::saveFrameAs()
 {
     QSettings settings;
     settings.beginGroup("recents");
-    if (!getCurrentFileDetails().isMovieLoaded)
+    if (!getImageDetails().isMovieLoaded)
         return;
 
     if (graphicsView->getLoadedMovie().state() == QMovie::Running) {
@@ -1061,7 +1061,7 @@ void MainWindow::saveFrameAs()
     QFileDialog *saveDialog = new QFileDialog(this, tr("Save Frame As..."));
     saveDialog->setDirectory(settings.value("lastFileDialogDir", QDir::homePath()).toString());
     saveDialog->setNameFilters(qvApp->getNameFilterList());
-    saveDialog->selectFile(getCurrentFileDetails().fileInfo.baseName() + "-"
+    saveDialog->selectFile(getCurrentMedia().fileInfo.baseName() + "-"
                            + QString::number(graphicsView->getLoadedMovie().currentFrameNumber())
                            + ".png");
     saveDialog->setDefaultSuffix("png");
@@ -1079,7 +1079,7 @@ void MainWindow::saveFrameAs()
 
 void MainWindow::pause()
 {
-    if (!getCurrentFileDetails().isMovieLoaded)
+    if (!getImageDetails().isMovieLoaded)
         return;
 
     const auto pauseActions = qvApp->getActionManager().getAllClonesOfAction("pause", this);
@@ -1101,7 +1101,7 @@ void MainWindow::pause()
 
 void MainWindow::nextFrame()
 {
-    if (!getCurrentFileDetails().isMovieLoaded)
+    if (!getImageDetails().isMovieLoaded)
         return;
 
     graphicsView->jumpToNextFrame();
@@ -1142,7 +1142,7 @@ void MainWindow::slideshowAction()
 
 void MainWindow::decreaseSpeed()
 {
-    if (!getCurrentFileDetails().isMovieLoaded)
+    if (!getImageDetails().isMovieLoaded)
         return;
 
     graphicsView->setSpeed(graphicsView->getLoadedMovie().speed() - 25);
@@ -1150,7 +1150,7 @@ void MainWindow::decreaseSpeed()
 
 void MainWindow::resetSpeed()
 {
-    if (!getCurrentFileDetails().isMovieLoaded)
+    if (!getImageDetails().isMovieLoaded)
         return;
 
     graphicsView->setSpeed(100);
@@ -1158,7 +1158,7 @@ void MainWindow::resetSpeed()
 
 void MainWindow::increaseSpeed()
 {
-    if (!getCurrentFileDetails().isMovieLoaded)
+    if (!getImageDetails().isMovieLoaded)
         return;
 
     graphicsView->setSpeed(graphicsView->getLoadedMovie().speed() + 25);

@@ -17,6 +17,7 @@ set(TEST_SOURCES
     ../src/qvwelcomedialog.cpp
     ../src/qvinfodialog.cpp
     ../src/qvimagecore.cpp
+    ../src/qvmediacatalog.cpp
     ../src/qvshortcutdialog.cpp
     ../src/actionmanager.cpp
     ../src/settingsmanager.cpp
@@ -87,3 +88,16 @@ endif()
 
 # Add the test
 add_test(NAME ActionManagerTests COMMAND actionmanagertests)
+
+# Media catalog tests stay independent of widgets and image decoding.
+add_executable(mediacatalogtests
+    tst_mediacatalogtests.cpp
+    ../src/qvmediacatalog.cpp
+    ../src/qvmediacatalog.h
+)
+target_include_directories(mediacatalogtests PRIVATE ../src)
+target_link_libraries(mediacatalogtests PRIVATE
+    Qt${QT_VERSION_MAJOR}::Core
+    Qt${QT_VERSION_MAJOR}::Test
+)
+add_test(NAME MediaCatalogTests COMMAND mediacatalogtests)

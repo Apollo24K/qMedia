@@ -142,7 +142,7 @@ QList<OpenWith::OpenWithItem> OpenWith::getOpenWithItemsFromDesktopFiles(const Q
 void OpenWith::showOpenWithDialog(QWidget *parent)
 {
     auto mainWindow = reinterpret_cast<MainWindow *>(parent);
-    QString filePath = mainWindow->getCurrentFileDetails().fileInfo.absoluteFilePath();
+    QString filePath = mainWindow->getCurrentMedia().fileInfo.absoluteFilePath();
 #ifdef Q_OS_MACOS
     auto openWithDialog = new QFileDialog(parent);
     openWithDialog->setNameFilters({ QT_TR_NOOP("All Applications (*.app)") });

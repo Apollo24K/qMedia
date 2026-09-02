@@ -4,12 +4,9 @@
 #include "qvcocoafunctions.h"
 #include "qvlinuxx11functions.h"
 #include <cstring>
-#include <random>
 #include <QMessageBox>
-#include <QDir>
 #include <QUrl>
 #include <QSettings>
-#include <QCollator>
 #include <QtConcurrent/QtConcurrentRun>
 #include <QIcon>
 #include <QGuiApplication>
@@ -72,17 +69,17 @@ void QVImageCore::loadFile(const QString &fileName, bool isReloading)
 
     if (fileInfo.isDir()) {
         updateFolderInfo(sanitaryFileName);
-        if (currentFileDetails.folderFileInfoList.isEmpty())
+        if (mediaCatalog.state().folderFiles.isEmpty())
             closeImage();
         else
-            loadFile(currentFileDetails.folderFileInfoList.at(0).absoluteFilePath);
+            loadFile(mediaCatalog.state().folderFiles.at(0).absoluteFilePath);
         return;
     }
 
     // Pause playing movie because it feels better that way
     setPaused(true);
 
-    currentFileDetails.isLoadRequested = true;
+    mediaCatalog.state().isLoadRequested = true;
     waitingOnLoad = true;
 
     QColorSpace targetColorSpace = getTargetColorSpace();
@@ -174,14 +171,14 @@ void QVImageCore::loadPixmap(const ReadData &readData)
     if (readData.errorData.hasError) {
         currentFileDetails = getEmptyFileDetails();
         currentFileDetails.errorData = readData.errorData;
+        mediaCatalog.state().isLoadRequested = false;
     } else {
         currentFileDetails.errorData = {};
     }
 
     // Do this first so we can keep folder info even when loading errored files
-    currentFileDetails.fileInfo = QFileInfo(readData.absoluteFilePath);
-    currentFileDetails.updateLoadedIndexInFolder();
-    if (currentFileDetails.loadedIndexInFolder == -1)
+    mediaCatalog.setCurrentFile(QFileInfo(readData.absoluteFilePath));
+    if (mediaCatalog.state().currentIndexInFolder == -1)
         updateFolderInfo();
 
     // Reset mechanism to avoid stalling while loading
@@ -200,7 +197,7 @@ void QVImageCore::loadPixmap(const ReadData &readData)
     currentFileDetails.loadedPixmapSize = loadedPixmap.size();
     if (currentFileDetails.baseImageSize == QSize(-1, -1)) {
         qInfo() << "QImageReader::size gave an invalid size for "
-                        + currentFileDetails.fileInfo.fileName()
+                        + mediaCatalog.state().fileInfo.fileName()
                         + ", using size from loaded pixmap";
         currentFileDetails.baseImageSize = currentFileDetails.loadedPixmapSize;
     }
@@ -210,12 +207,12 @@ void QVImageCore::loadPixmap(const ReadData &readData)
     // Animation detection
     loadedMovie.setFormat("");
     loadedMovie.stop();
-    loadedMovie.setFileName(currentFileDetails.fileInfo.absoluteFilePath());
+    loadedMovie.setFileName(mediaCatalog.state().fileInfo.absoluteFilePath());
 
     // APNG workaround
     if (loadedMovie.format() == "png") {
         loadedMovie.setFormat("apng");
-        loadedMovie.setFileName(currentFileDetails.fileInfo.absoluteFilePath());
+        loadedMovie.setFileName(mediaCatalog.state().fileInfo.absoluteFilePath());
     }
 
     if (loadedMovie.isValid() && loadedMovie.frameCount() != 1)
@@ -237,6 +234,7 @@ void QVImageCore::loadPixmap(const ReadData &readData)
 void QVImageCore::closeImage()
 {
     currentFileDetails = getEmptyFileDetails();
+    mediaCatalog.clearCurrentFile();
     loadEmptyPixmap();
 }
 
@@ -251,11 +249,7 @@ void QVImageCore::loadEmptyPixmap()
 
 QVImageCore::FileDetails QVImageCore::getEmptyFileDetails()
 {
-    return { QFileInfo(),
-             currentFileDetails.folderFileInfoList,
-             currentFileDetails.loadedIndexInFolder,
-             false,
-             false,
+    return { false,
              false,
              QSize(),
              QSize(),
@@ -263,165 +257,17 @@ QVImageCore::FileDetails QVImageCore::getEmptyFileDetails()
              {} };
 }
 
-// All file logic, sorting, etc should be moved to a different class or file
-QList<QVImageCore::CompatibleFile> QVImageCore::getCompatibleFiles(const QString &dirPath) const
-{
-    int sortMode = qvGetSettingInt(SortMode);
-    QList<CompatibleFile> fileList;
-
-    QMimeDatabase mimeDb;
-    const auto &extensions = qvApp->getFileExtensionList();
-    const auto &mimeTypes = qvApp->getMimeTypeNameList();
-
-    QMimeDatabase::MatchMode mimeMatchMode = qvGetSettingBool(AllowMimeContentDetection)
-            ? QMimeDatabase::MatchDefault
-            : QMimeDatabase::MatchExtension;
-
-    // skip hidden files if user wants to
-    QDir::Filters filters = QDir::Files;
-
-    auto &settingsManager = qvApp->getSettingsManager();
-    if (!settingsManager.getBool("skiphidden"))
-        filters |= QDir::Hidden;
-
-    const QFileInfoList currentFolder = QDir(dirPath).entryInfoList(filters, QDir::Unsorted);
-    for (const QFileInfo &fileInfo : currentFolder) {
-        bool matched = false;
-        const QString absoluteFilePath = fileInfo.absoluteFilePath();
-        const QString fileName = fileInfo.fileName();
-        for (const QString &extension : extensions) {
-            if (fileName.endsWith(extension, Qt::CaseInsensitive)) {
-                matched = true;
-                break;
-            }
-        }
-        QString mimeType;
-        if (!matched || sortMode == 4) {
-            mimeType = mimeDb.mimeTypeForFile(absoluteFilePath, mimeMatchMode).name();
-            matched |= mimeTypes.contains(mimeType);
-        }
-
-        // ignore macOS ._ metadata files
-        if (fileName.startsWith("._")) {
-            matched = false;
-        }
-
-        if (matched) {
-            fileList.append({ absoluteFilePath, fileName,
-                              sortMode == 1 ? fileInfo.lastModified().toMSecsSinceEpoch() : 0,
-#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
-                              sortMode == 2 ? fileInfo.birthTime().toMSecsSinceEpoch() : 0,
-#else
-                              sortMode == 2 ? fileInfo.created().toMSecsSinceEpoch() : 0,
-#endif
-                              sortMode == 3 ? fileInfo.size() : 0,
-                              sortMode == 4 ? mimeType : QString() });
-        }
-    }
-
-    return fileList;
-}
-
 void QVImageCore::updateFolderInfo(QString dirPath)
 {
-    if (dirPath.isEmpty()) {
-        dirPath = currentFileDetails.fileInfo.path();
-
-        // No directory specified and a file is not already loaded from which we can infer one
-        if (dirPath.isEmpty())
-            return;
-    }
-
-    currentFileDetails.folderFileInfoList = getCompatibleFiles(dirPath);
-
-    DirInfo dirInfo = { dirPath, currentFileDetails.folderFileInfoList.count(),
-                        qvGetSettingInt(SortMode), qvGetSettingBool(SortDescending) };
-    // If the current folder changed since the last image, assign a new seed for random sorting
-    const bool shouldSort = lastDirInfo != dirInfo;
-    lastDirInfo = dirInfo;
-
-    const auto sortFn = [&]() {
-        // Sorting
-        switch (dirInfo.sortMode) {
-        case 0: {
-            // Natural sorting
-            QCollator collator;
-            collator.setNumericMode(true);
-            std::sort(currentFileDetails.folderFileInfoList.begin(),
-                      currentFileDetails.folderFileInfoList.end(),
-                      [&](const CompatibleFile &file1, const CompatibleFile &file2) {
-                          if (dirInfo.sortDescending)
-                              return collator.compare(file1.fileName, file2.fileName) > 0;
-                          else
-                              return collator.compare(file1.fileName, file2.fileName) < 0;
-                      });
-            break;
-        }
-        case 1:
-            // Date modified
-            std::sort(currentFileDetails.folderFileInfoList.begin(),
-                      currentFileDetails.folderFileInfoList.end(),
-                      [&](const CompatibleFile &file1, const CompatibleFile &file2) {
-                          if (dirInfo.sortDescending)
-                              return file1.lastModified < file2.lastModified;
-                          else
-                              return file1.lastModified > file2.lastModified;
-                      });
-            break;
-        case 2:
-            // Date created
-            std::sort(currentFileDetails.folderFileInfoList.begin(),
-                      currentFileDetails.folderFileInfoList.end(),
-                      [&](const CompatibleFile &file1, const CompatibleFile &file2) {
-                          if (dirInfo.sortDescending)
-                              return file1.lastCreated < file2.lastCreated;
-                          else
-                              return file1.lastCreated > file2.lastCreated;
-                      });
-            break;
-        case 3:
-            // Size
-            std::sort(currentFileDetails.folderFileInfoList.begin(),
-                      currentFileDetails.folderFileInfoList.end(),
-                      [&](const CompatibleFile &file1, const CompatibleFile &file2) {
-                          if (dirInfo.sortDescending)
-                              return file1.size < file2.size;
-                          else
-                              return file1.size > file2.size;
-                      });
-            break;
-        case 4: {
-            // Type
-            QCollator collator;
-            std::sort(currentFileDetails.folderFileInfoList.begin(),
-                      currentFileDetails.folderFileInfoList.end(),
-                      [&](const CompatibleFile &file1, const CompatibleFile &file2) {
-                          if (dirInfo.sortDescending)
-                              return collator.compare(file1.mimeType, file2.mimeType) > 0;
-                          else
-                              return collator.compare(file1.mimeType, file2.mimeType) < 0;
-                      });
-            break;
-        }
-        case 5:
-            // Random
-            std::shuffle(currentFileDetails.folderFileInfoList.begin(),
-                         currentFileDetails.folderFileInfoList.end(),
-                         std::default_random_engine(
-                                 std::chrono::system_clock::now().time_since_epoch().count()));
-            break;
-        default:
-            Q_ASSERT(false);
-            break;
-        }
-    };
-
-    if (shouldSort) {
-        sortFn();
-    }
-
-    // Set current file index variable
-    currentFileDetails.updateLoadedIndexInFolder();
+    QVMediaCatalog::ScanOptions options;
+    options.supportedMedia.append({ QVMediaCatalog::MediaType::Image,
+                                    qvApp->getFileExtensionList(),
+                                    qvApp->getMimeTypeNameList() });
+    options.allowMimeContentDetection = qvGetSettingBool(AllowMimeContentDetection);
+    options.includeHidden = !qvApp->getSettingsManager().getBool("skiphidden");
+    options.sortMode = qvGetSettingInt(SortMode);
+    options.sortDescending = qvGetSettingBool(SortDescending);
+    mediaCatalog.updateFolder(dirPath, options);
 }
 
 void QVImageCore::requestCaching()
@@ -440,28 +286,29 @@ void QVImageCore::requestCaching()
         preloadingDistance = 4;
 
     QStringList filesToPreload;
-    for (int i = currentFileDetails.loadedIndexInFolder - preloadingDistance;
-         i <= currentFileDetails.loadedIndexInFolder + preloadingDistance; i++) {
+    const auto &mediaState = mediaCatalog.state();
+    for (int i = mediaState.currentIndexInFolder - preloadingDistance;
+         i <= mediaState.currentIndexInFolder + preloadingDistance; i++) {
         int index = i;
 
         // Don't try to cache the currently loaded image
-        if (index == currentFileDetails.loadedIndexInFolder)
+        if (index == mediaState.currentIndexInFolder)
             continue;
 
         // keep within index range
         if (qvGetSettingBool(LoopFoldersEnabled)) {
-            if (index > currentFileDetails.folderFileInfoList.length() - 1)
-                index = index - (currentFileDetails.folderFileInfoList.length());
+            if (index > mediaState.folderFiles.length() - 1)
+                index = index - (mediaState.folderFiles.length());
             else if (index < 0)
-                index = index + (currentFileDetails.folderFileInfoList.length());
+                index = index + (mediaState.folderFiles.length());
         }
 
         // if still out of range after looping, just cancel the cache for this index
-        if (index > currentFileDetails.folderFileInfoList.length() - 1 || index < 0
-            || currentFileDetails.folderFileInfoList.isEmpty())
+        if (index > mediaState.folderFiles.length() - 1 || index < 0
+            || mediaState.folderFiles.isEmpty())
             continue;
 
-        QString filePath = currentFileDetails.folderFileInfoList[index].absoluteFilePath;
+        QString filePath = mediaState.folderFiles[index].absoluteFilePath;
         filesToPreload.append(filePath);
 
         requestCachingFile(filePath, targetColorSpace);
@@ -750,22 +597,5 @@ void QVImageCore::settingsUpdated()
     }
 
     if (changedImagePreprocessing && currentFileDetails.isPixmapLoaded)
-        loadFile(currentFileDetails.fileInfo.absoluteFilePath());
-}
-
-void QVImageCore::FileDetails::updateLoadedIndexInFolder()
-{
-    const QString targetPath = fileInfo.absoluteFilePath().normalized(QString::NormalizationForm_D);
-    for (int i = 0; i < folderFileInfoList.length(); i++) {
-        // Compare absoluteFilePath first because it's way faster, but double-check with
-        // QFileInfo::operator== because it respects file system case sensitivity rules
-        QString candidatePath =
-                folderFileInfoList[i].absoluteFilePath.normalized(QString::NormalizationForm_D);
-        if (candidatePath.compare(targetPath, Qt::CaseInsensitive) == 0
-            && QFileInfo(folderFileInfoList[i].absoluteFilePath) == fileInfo) {
-            loadedIndexInFolder = i;
-            return;
-        }
-    }
-    loadedIndexInFolder = -1;
+        loadFile(mediaCatalog.state().fileInfo.absoluteFilePath());
 }

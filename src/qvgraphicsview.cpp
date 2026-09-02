@@ -302,11 +302,11 @@ void QVGraphicsView::wheelEvent(QWheelEvent *event)
 QMimeData *QVGraphicsView::getMimeData() const
 {
     auto *mimeData = new QMimeData();
-    if (!getCurrentFileDetails().isPixmapLoaded)
+    if (!getImageDetails().isPixmapLoaded)
         return mimeData;
 
     mimeData->setUrls(
-            { QUrl::fromLocalFile(imageCore.getCurrentFileDetails().fileInfo.absoluteFilePath()) });
+            { QUrl::fromLocalFile(imageCore.getCurrentMedia().fileInfo.absoluteFilePath()) });
     mimeData->setImageData(imageCore.getLoadedPixmap().toImage());
     return mimeData;
 }
@@ -340,16 +340,16 @@ void QVGraphicsView::loadFile(const QString &fileName)
 
 void QVGraphicsView::reloadFile()
 {
-    if (!getCurrentFileDetails().isPixmapLoaded)
+    if (!getImageDetails().isPixmapLoaded)
         return;
 
-    imageCore.loadFile(getCurrentFileDetails().fileInfo.absoluteFilePath(), true);
+    imageCore.loadFile(getCurrentMedia().fileInfo.absoluteFilePath(), true);
 }
 
 void QVGraphicsView::postLoad()
 {
     updateLoadedPixmapItem();
-    qvApp->getActionManager().addFileToRecentsList(getCurrentFileDetails().fileInfo);
+    qvApp->getActionManager().addFileToRecentsList(getCurrentMedia().fileInfo);
 
     emit fileChanged();
 }
@@ -426,7 +426,7 @@ void QVGraphicsView::scaleExpensively()
     // Map size of the original pixmap to the scale acquired in fitting with modification from
     // zooming percentage
     const QRectF mappedRect =
-            absoluteTransform.mapRect(QRectF({}, getCurrentFileDetails().loadedPixmapSize));
+            absoluteTransform.mapRect(QRectF({}, getImageDetails().loadedPixmapSize));
     const QSizeF mappedPixmapSize = mappedRect.size() * devicePixelRatioF();
 
     // Undo mirror/flip before new transform
@@ -467,7 +467,7 @@ void QVGraphicsView::makeUnscaled()
         flipped = true;
 
     // Return to original size
-    if (getCurrentFileDetails().isMovieLoaded)
+    if (getImageDetails().isMovieLoaded)
         loadedPixmapItem->setPixmap(getLoadedMovie().currentPixmap());
     else
         loadedPixmapItem->setPixmap(getLoadedPixmap());
@@ -519,7 +519,7 @@ void QVGraphicsView::updateLoadedPixmapItem()
 
 void QVGraphicsView::resetScale()
 {
-    if (!getCurrentFileDetails().isPixmapLoaded)
+    if (!getImageDetails().isPixmapLoaded)
         return;
 
     fitInViewMarginless(loadedPixmapItem);
@@ -555,22 +555,22 @@ void QVGraphicsView::goToFile(const GoToFileMode &mode, int index)
 
     // Update folder info only after a little idle time as an optimization for when
     // the user is rapidly navigating through files.
-    if (!getCurrentFileDetails().timeSinceLoaded.isValid()
-        || getCurrentFileDetails().timeSinceLoaded.hasExpired(3000)) {
+    if (!getImageDetails().timeSinceLoaded.isValid()
+        || getImageDetails().timeSinceLoaded.hasExpired(3000)) {
         // Make sure the file still exists because if it disappears from the file listing we'll lose
         // track of our index within the folder. Use the static 'exists' method to avoid caching.
         // If we skip updating now, flag it for retry later once we locate a new file.
-        if (QFile::exists(getCurrentFileDetails().fileInfo.absoluteFilePath()))
+        if (QFile::exists(getCurrentMedia().fileInfo.absoluteFilePath()))
             imageCore.updateFolderInfo();
         else
             shouldRetryFolderInfoUpdate = true;
     }
 
-    const auto &fileList = getCurrentFileDetails().folderFileInfoList;
+    const auto &fileList = getCurrentMedia().folderFiles;
     if (fileList.isEmpty())
         return;
 
-    int newIndex = getCurrentFileDetails().loadedIndexInFolder;
+    int newIndex = getCurrentMedia().currentIndexInFolder;
     int searchDirection = 0;
 
     switch (mode) {
@@ -624,12 +624,12 @@ void QVGraphicsView::goToFile(const GoToFileMode &mode, int index)
     const QString nextImageFilePath = fileList.value(newIndex).absoluteFilePath;
 
     if (!QFile::exists(nextImageFilePath)
-        || nextImageFilePath == getCurrentFileDetails().fileInfo.absoluteFilePath())
+        || nextImageFilePath == getCurrentMedia().fileInfo.absoluteFilePath())
         return;
 
     if (shouldRetryFolderInfoUpdate) {
         // If the user just deleted a file through qView, closeImage will have been called which
-        // empties currentFileDetails.fileInfo. In this case updateFolderInfo can't infer the
+        // clears the current media file. In this case updateFolderInfo can't infer the
         // directory from fileInfo like it normally does, so we'll explicity pass in the folder
         // here.
         imageCore.updateFolderInfo(QFileInfo(nextImageFilePath).path());
@@ -647,7 +647,7 @@ void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
 #endif
 
     // Set adjusted image size / bounding rect based on
-    QSize adjustedImageSize = getCurrentFileDetails().loadedPixmapSize;
+    QSize adjustedImageSize = getImageDetails().loadedPixmapSize;
     QRectF adjustedBoundingRect = rect;
 
     switch (qvGetSettingInt(CropMode)) { // should be enum tbh
@@ -687,7 +687,7 @@ void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
         viewRect.setHeight(viewRect.height() - obscuredHeight);
     } else {
         // stop at actual size
-        viewRect = QRect(QPoint(), getCurrentFileDetails().loadedPixmapSize);
+        viewRect = QRect(QPoint(), getImageDetails().loadedPixmapSize);
         QPoint center = this->rect().center();
         center.setY(center.y() - obscuredHeight);
         viewRect.moveCenter(center);
@@ -769,7 +769,7 @@ void QVGraphicsView::centerOn(const QGraphicsItem *item)
 
 void QVGraphicsView::settingsUpdated()
 {
-    if (getCurrentFileDetails().isPixmapLoaded)
+    if (getImageDetails().isPixmapLoaded)
         resetScale();
 }
 

@@ -154,7 +154,7 @@ MainWindow *QVApplication::getMainWindow(bool shouldBeEmpty)
 
         if (shouldBeEmpty) {
             // File info is set if an image load is requested, but not loaded
-            if (!window->getCurrentFileDetails().isLoadRequested) {
+            if (!window->getCurrentMedia().isLoadRequested) {
                 return window;
             }
         } else {
@@ -167,7 +167,7 @@ MainWindow *QVApplication::getMainWindow(bool shouldBeEmpty)
     for (const auto &widget : topLevelWidgets) {
         if (auto *window = qobject_cast<MainWindow *>(widget)) {
             if (shouldBeEmpty) {
-                if (!window->getCurrentFileDetails().isLoadRequested) {
+                if (!window->getCurrentMedia().isLoadRequested) {
                     return window;
                 }
             } else {
