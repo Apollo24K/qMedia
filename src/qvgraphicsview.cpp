@@ -14,6 +14,7 @@
 #include <QtMath>
 #include <QGestureEvent>
 #include <QScrollBar>
+#include <QElapsedTimer>
 
 QVGraphicsView::QVGraphicsView(QWidget *parent) : QGraphicsView(parent)
 {
@@ -870,7 +871,10 @@ void QVGraphicsView::ensureVideoView()
     if (videoView)
         return;
 
+    QElapsedTimer initializationTimer;
+    initializationTimer.start();
     videoView = new QVVideoView(scene(), this);
+    videoView->recordInitializationDuration(initializationTimer.elapsed());
     connect(videoView, &QVVideoView::nativeSizeChanged, this, [this](const QSizeF &size) {
         if (size.isEmpty())
             return;

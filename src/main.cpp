@@ -1,8 +1,10 @@
 #include "mainwindow.h"
 #include "qvapplication.h"
+#include "qvvideoview.h"
 #include "qvwin32functions.h"
 
 #include <QCommandLineParser>
+#include <QTimer>
 
 int main(int argc, char *argv[])
 {
@@ -12,7 +14,19 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationName("qView");
     QCoreApplication::setApplicationName("qView");
     QCoreApplication::setApplicationVersion(QString::number(VERSION));
+#if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // The native backend provides working audio on Windows installations where
+    // Qt's FFmpeg backend decodes video but produces no audible output. Preserve
+    // an explicit override for troubleshooting and format-compatibility testing.
+    if (qEnvironmentVariableIsEmpty("QT_MEDIA_BACKEND"))
+        qputenv("QT_MEDIA_BACKEND", QByteArrayLiteral("windows"));
+#endif
     QVApplication app(argc, argv);
+
+    // QAudioOutput performs expensive once-per-process device initialization on
+    // some systems. Start it off the GUI thread after the event loop begins so
+    // image startup and the first video frame are not blocked by audio discovery.
+    QTimer::singleShot(50, &app, []() { QVVideoView::startAudioBackendWarmup(); });
 
     QCommandLineParser parser;
     parser.addHelpOption();
