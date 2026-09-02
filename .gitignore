@@ -41,6 +41,8 @@ Makefile*
 CMakeLists.txt.user*
 
 # Custom
+AGENTS.md
+
 *.exe
 .vscode
 

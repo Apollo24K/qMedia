@@ -81,7 +81,7 @@ target_compile_definitions(actionmanagertests PRIVATE
     QT_NO_FOREACH
 )
 
-if(NOT QV_DISABLE_ONLINE_VERSION_CHECK)
+if(QV_DISABLE_ONLINE_VERSION_CHECK)
     target_compile_definitions(actionmanagertests PRIVATE QV_DISABLE_ONLINE_VERSION_CHECK)
 endif()
 

@@ -147,7 +147,7 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # Add compile definitions based on options
-if(NOT QV_DISABLE_ONLINE_VERSION_CHECK)
+if(QV_DISABLE_ONLINE_VERSION_CHECK)
     target_compile_definitions(${PROJECT_NAME} PRIVATE QV_DISABLE_ONLINE_VERSION_CHECK)
 endif()
 
@@ -221,7 +221,7 @@ if(DEFINED NIGHTLY)
 endif()
 
 # Handle translations
-if(Qt${QT_VERSION_MAJOR}_LinguistTools_FOUND)
+if(Qt${QT_VERSION_MAJOR}LinguistTools_FOUND)
     message(STATUS "LinguistTools found, building translations.")
     file(GLOB TRANSLATIONS "i18n/qview_*.ts")
     if(QT_VERSION_MAJOR EQUAL 5)
