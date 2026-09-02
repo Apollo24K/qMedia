@@ -70,6 +70,11 @@ void QVImageCore::loadFile(const QString &fileName, bool isReloading)
     // Pause playing movie because it feels better that way
     setPaused(true);
 
+    // Record the requested image before decoding starts. Without this transition,
+    // an image requested after a video leaves the catalog marked as Video; the
+    // completion handler then mistakes the decoded image for an obsolete result
+    // and discards it.
+    mediaCatalog.setCurrentFile(fileInfo, QVMediaCatalog::MediaType::Image);
     mediaCatalog.state().isLoadRequested = true;
     waitingOnLoad = true;
 

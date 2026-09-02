@@ -497,8 +497,10 @@ void MainWindow::refreshProperties()
         value4 = graphicsView->getLoadedMovie().frameCount();
     else
         value4 = 0;
-    info->setInfo(getCurrentMedia().fileInfo, getImageDetails().baseImageSize.width(),
-                  getImageDetails().baseImageSize.height(), value4);
+    const QSize mediaSize = getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video
+            ? graphicsView->currentMediaSize()
+            : getImageDetails().baseImageSize;
+    info->setInfo(getCurrentMedia().fileInfo, mediaSize.width(), mediaSize.height(), value4);
 }
 
 void MainWindow::updateWindowTitle()

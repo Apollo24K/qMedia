@@ -1,6 +1,9 @@
 #include <QtTest>
 
 #include "qvapplication.h"
+#include <QFile>
+#include <QImage>
+#include <QTemporaryDir>
 
 class ActionManagerTests : public QObject
 {
@@ -13,6 +16,7 @@ public:
 private slots:
     void testClonedActionsUntracked();
     void testCanvasActionsSupportAllVisualMedia();
+    void testImageRequestAfterVideoIsNotDiscarded();
 };
 
 ActionManagerTests::ActionManagerTests() { }
@@ -53,6 +57,31 @@ void ActionManagerTests::testCanvasActionsSupportAllVisualMedia()
         QCOMPARE(actionLibrary.value(key)->data().toStringList().constLast(),
                  QString("mediadisable"));
     }
+}
+
+void ActionManagerTests::testImageRequestAfterVideoIsNotDiscarded()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    const QString videoPath = directory.filePath("video.mp4");
+    QFile videoFile(videoPath);
+    QVERIFY(videoFile.open(QIODevice::WriteOnly));
+    videoFile.close();
+
+    const QString imagePath = directory.filePath("image.png");
+    QImage image(8, 6, QImage::Format_ARGB32);
+    image.fill(Qt::red);
+    QVERIFY(image.save(imagePath));
+
+    MainWindow window;
+    window.show();
+    window.openFile(videoPath);
+    QCOMPARE(window.getCurrentMedia().mediaType, QVMediaCatalog::MediaType::Video);
+
+    window.openFile(imagePath);
+    QCOMPARE(window.getCurrentMedia().mediaType, QVMediaCatalog::MediaType::Image);
+    QTRY_VERIFY_WITH_TIMEOUT(window.getImageDetails().isPixmapLoaded, 2000);
 }
 
 int main(int argc, char *argv[])

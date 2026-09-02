@@ -43,6 +43,7 @@ QVGraphicsView::QVGraphicsView(QWidget *parent) : QGraphicsView(parent)
     mousePressModifiers = Qt::KeyboardModifier::NoModifier;
     mousePressPosition = QPoint();
     videoView = nullptr;
+    mediaRequestGeneration = 0;
     videoCanvasActive = false;
 
     zoomBasisScaleFactor = 1.0;
@@ -369,6 +370,7 @@ void QVGraphicsView::loadMimeData(const QMimeData *mimeData)
 
 void QVGraphicsView::loadFile(const QString &fileName)
 {
+    const quint64 requestGeneration = ++mediaRequestGeneration;
     QString sanitaryFileName = fileName;
     const QUrl url(fileName);
     if (url.isLocalFile())
@@ -387,22 +389,28 @@ void QVGraphicsView::loadFile(const QString &fileName)
 
     const auto mediaType = imageCore.mediaTypeForFile(fileInfo);
     if (mediaType == QVMediaCatalog::MediaType::Video) {
+        resetCanvasForNewMedia();
+        videoNativeSize = QSize();
         activateVideoCanvas();
         imageCore.activateExternalMedia(sanitaryFileName, mediaType);
         // Let the already-visible window paint before the multimedia backend is
         // initialized. This keeps launch responsive even when the backend is cold.
-        QTimer::singleShot(0, this, [this, sanitaryFileName]() {
-            if (getCurrentMedia().fileInfo.absoluteFilePath() == sanitaryFileName
+        QTimer::singleShot(0, this, [this, sanitaryFileName, requestGeneration]() {
+            if (requestGeneration == mediaRequestGeneration
+                && getCurrentMedia().fileInfo.absoluteFilePath() == sanitaryFileName
                 && getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video) {
                 ensureVideoView();
-                activateVideoCanvas();
+                videoView->graphicsItem()->show();
                 videoView->loadFile(sanitaryFileName);
             }
         });
     } else {
         if (imageCore.isLoadInProgress())
             return;
+        const bool wasVideoCanvasActive = videoCanvasActive;
         closeVideo();
+        if (wasVideoCanvasActive)
+            resetCanvasForNewMedia();
         activateImageCanvas();
         imageCore.loadFile(sanitaryFileName);
     }
@@ -864,16 +872,25 @@ void QVGraphicsView::ensureVideoView()
 
     videoView = new QVVideoView(scene(), this);
     connect(videoView, &QVVideoView::nativeSizeChanged, this, [this](const QSizeF &size) {
+        if (size.isEmpty())
+            return;
+
         videoNativeSize = size.toSize();
-        if (videoCanvasActive && !videoNativeSize.isEmpty()) {
-            resetScale();
-            emit updatedLoadedPixmapItem();
-        }
+        if (!videoCanvasActive)
+            return;
+
+        resetScale();
+        emit updatedLoadedPixmapItem();
     });
     connect(videoView, &QVVideoView::videoLoadedChanged, this, [this]() {
-        if (videoCanvasActive && videoView->isLoaded() && !videoNativeSize.isEmpty()) {
-            resetScale();
-            emit updatedLoadedPixmapItem();
+        if (videoCanvasActive && videoView->isLoaded()) {
+            const QSize reportedSize = videoView->graphicsItem()->nativeSize().toSize();
+            if (!reportedSize.isEmpty()) {
+                videoNativeSize = reportedSize;
+                videoView->graphicsItem()->setSize(reportedSize);
+                resetScale();
+                emit updatedLoadedPixmapItem();
+            }
         }
         emit fileChanged();
     });
@@ -893,10 +910,34 @@ void QVGraphicsView::activateImageCanvas()
 void QVGraphicsView::activateVideoCanvas()
 {
     videoCanvasActive = true;
-    videoNativeSize = QSize();
     loadedPixmapItem->hide();
     if (videoView)
         videoView->graphicsItem()->show();
+}
+
+void QVGraphicsView::resetCanvasForNewMedia()
+{
+    expensiveScaleTimerNew->stop();
+    resetTransform();
+    horizontalScrollBar()->setValue(0);
+    verticalScrollBar()->setValue(0);
+
+    currentScale = 1.0;
+    isOriginalSize = false;
+    lastZoomEventPos = QPoint(-1, -1);
+    lastZoomRoundingError = QPointF();
+    lastScrollRoundingError = QPointF();
+    absoluteTransform = QTransform();
+    zoomBasis = QTransform();
+    zoomBasisScaleFactor = 1.0;
+
+    if (videoView) {
+        QGraphicsVideoItem *item = videoView->graphicsItem();
+        item->setPos(QPointF());
+        item->setRotation(0);
+        item->setTransform(QTransform());
+        item->setTransformOriginPoint(QPointF());
+    }
 }
 
 bool QVGraphicsView::hasActiveCanvasItem() const
@@ -961,6 +1002,7 @@ void QVGraphicsView::toggleVideoPaused()
 
 void QVGraphicsView::closeImage()
 {
+    ++mediaRequestGeneration;
     closeVideo();
     activateImageCanvas();
     imageCore.closeImage();

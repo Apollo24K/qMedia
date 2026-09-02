@@ -128,6 +128,7 @@ private:
     void updateFilteringMode();
     void activateImageCanvas();
     void activateVideoCanvas();
+    void resetCanvasForNewMedia();
     void ensureVideoView();
     bool hasActiveCanvasItem() const;
     QGraphicsItem *activeCanvasItem() const;
@@ -135,6 +136,7 @@ private:
     QGraphicsPixmapItem *loadedPixmapItem;
     QVVideoView *videoView;
     QSize videoNativeSize;
+    quint64 mediaRequestGeneration;
     bool videoCanvasActive;
 
     constexpr static int MARGIN = -2;
