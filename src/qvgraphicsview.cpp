@@ -1,11 +1,13 @@
 #include "qvgraphicsview.h"
 #include "qvapplication.h"
+#include "qvvideoview.h"
 #include "qvinfodialog.h"
 #include "qvcocoafunctions.h"
 #include "settingsmanager.h"
 #include <QWheelEvent>
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
+#include <QGraphicsVideoItem>
 #include <QSettings>
 #include <QMessageBox>
 #include <QMovie>
@@ -40,6 +42,8 @@ QVGraphicsView::QVGraphicsView(QWidget *parent) : QGraphicsView(parent)
     mousePressButton = Qt::MouseButton::NoButton;
     mousePressModifiers = Qt::KeyboardModifier::NoModifier;
     mousePressPosition = QPoint();
+    videoView = nullptr;
+    videoCanvasActive = false;
 
     zoomBasisScaleFactor = 1.0;
 
@@ -64,6 +68,14 @@ QVGraphicsView::QVGraphicsView(QWidget *parent) : QGraphicsView(parent)
     settingsUpdated();
 }
 
+QVGraphicsView::~QVGraphicsView()
+{
+    // QGraphicsScene also owns its items, so tear down the video output before
+    // QObject deletes the scene inherited from this view.
+    delete videoView;
+    videoView = nullptr;
+}
+
 // Events
 
 void QVGraphicsView::resizeEvent(QResizeEvent *event)
@@ -71,8 +83,8 @@ void QVGraphicsView::resizeEvent(QResizeEvent *event)
     QGraphicsView::resizeEvent(event);
     if (!isOriginalSize)
         resetScale();
-    else
-        centerOn(loadedPixmapItem);
+    else if (hasActiveCanvasItem())
+        centerOn(activeCanvasItem());
 }
 
 void QVGraphicsView::dropEvent(QDropEvent *event)
@@ -113,6 +125,19 @@ void QVGraphicsView::enterEvent(QEnterEvent *event)
 
 void QVGraphicsView::mousePressEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::BackButton) {
+        goToFile(GoToFileMode::previous);
+        return;
+    }
+    if (event->button() == Qt::ForwardButton) {
+        goToFile(GoToFileMode::next);
+        return;
+    }
+    if (event->button() == Qt::MiddleButton) {
+        resetScale();
+        return;
+    }
+
     const auto startWindowMove = [this, event]() {
 #ifdef COCOA_LOADED
         return QVCocoaFunctions::startSystemMove(window());
@@ -165,6 +190,15 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
     }
 
     QGraphicsView::mousePressEvent(event);
+}
+
+void QVGraphicsView::mouseDoubleClickEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton) {
+        emit fullscreenRequested();
+        return;
+    }
+    QGraphicsView::mouseDoubleClickEvent(event);
 }
 
 void QVGraphicsView::mouseMoveEvent(QMouseEvent *event)
@@ -353,12 +387,23 @@ void QVGraphicsView::loadFile(const QString &fileName)
 
     const auto mediaType = imageCore.mediaTypeForFile(fileInfo);
     if (mediaType == QVMediaCatalog::MediaType::Video) {
+        activateVideoCanvas();
         imageCore.activateExternalMedia(sanitaryFileName, mediaType);
-        emit videoFileRequested(sanitaryFileName);
+        // Let the already-visible window paint before the multimedia backend is
+        // initialized. This keeps launch responsive even when the backend is cold.
+        QTimer::singleShot(0, this, [this, sanitaryFileName]() {
+            if (getCurrentMedia().fileInfo.absoluteFilePath() == sanitaryFileName
+                && getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video) {
+                ensureVideoView();
+                activateVideoCanvas();
+                videoView->loadFile(sanitaryFileName);
+            }
+        });
     } else {
         if (imageCore.isLoadInProgress())
             return;
-        emit imageFileRequested();
+        closeVideo();
+        activateImageCanvas();
         imageCore.loadFile(sanitaryFileName);
     }
 }
@@ -421,7 +466,7 @@ void QVGraphicsView::zoom(qreal scaleFactor, const QPoint &pos)
         verticalScrollBar()->setValue(verticalScrollBar()->value() + move.y());
         lastZoomRoundingError = mapToScene(pos) - scenePos;
     } else {
-        centerOn(loadedPixmapItem);
+        centerOn(activeCanvasItem());
     }
 
     if (qvGetSettingBool(ScalingEnabled) && !isOriginalSize) {
@@ -431,6 +476,9 @@ void QVGraphicsView::zoom(qreal scaleFactor, const QPoint &pos)
 
 void QVGraphicsView::scaleExpensively()
 {
+    if (videoCanvasActive)
+        return;
+
     // Determine if mirrored or flipped
     bool mirrored = false;
     if (transform().m11() < 0)
@@ -491,11 +539,14 @@ void QVGraphicsView::makeUnscaled()
     if (transform().m22() < 0)
         flipped = true;
 
-    // Return to original size
-    if (getImageDetails().isMovieLoaded)
-        loadedPixmapItem->setPixmap(getLoadedMovie().currentPixmap());
-    else
-        loadedPixmapItem->setPixmap(getLoadedPixmap());
+    // Return images to their original pixels. Video frames remain rendered by
+    // QGraphicsVideoItem and only need the canvas transform restored.
+    if (!videoCanvasActive) {
+        if (getImageDetails().isMovieLoaded)
+            loadedPixmapItem->setPixmap(getLoadedMovie().currentPixmap());
+        else
+            loadedPixmapItem->setPixmap(getLoadedPixmap());
+    }
 
     setTransform(absoluteTransform);
 
@@ -513,6 +564,9 @@ void QVGraphicsView::makeUnscaled()
 
 void QVGraphicsView::updateFilteringMode()
 {
+    if (videoCanvasActive)
+        return;
+
     const bool exceededSmoothScaleLimit = currentScale >= MAX_FILTERING_SIZE;
     loadedPixmapItem->setTransformationMode(!exceededSmoothScaleLimit
                                                             && qvGetSettingBool(FilteringEnabled)
@@ -533,6 +587,11 @@ void QVGraphicsView::animatedFrameChanged(QRect rect)
 
 void QVGraphicsView::updateLoadedPixmapItem()
 {
+    if (getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video)
+        return;
+
+    activateImageCanvas();
+
     // set pixmap and offset
     loadedPixmapItem->setPixmap(getLoadedPixmap());
     scaledSize = loadedPixmapItem->boundingRect().size().toSize();
@@ -544,12 +603,12 @@ void QVGraphicsView::updateLoadedPixmapItem()
 
 void QVGraphicsView::resetScale()
 {
-    if (!getImageDetails().isPixmapLoaded)
+    if (!hasActiveCanvasItem())
         return;
 
-    fitInViewMarginless(loadedPixmapItem);
+    fitInViewMarginless(activeCanvasItem());
 
-    if (qvGetSettingBool(ScalingEnabled))
+    if (!videoCanvasActive && qvGetSettingBool(ScalingEnabled))
         expensiveScaleTimerNew->start();
 }
 
@@ -565,7 +624,7 @@ void QVGraphicsView::originalSize()
     makeUnscaled();
 
     resetTransform();
-    centerOn(loadedPixmapItem);
+    centerOn(activeCanvasItem());
 
     zoomBasis = transform();
     zoomBasisScaleFactor = 1.0;
@@ -672,7 +731,7 @@ void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
 #endif
 
     // Set adjusted image size / bounding rect based on
-    QSize adjustedImageSize = getImageDetails().loadedPixmapSize;
+    QSize adjustedImageSize = currentMediaSize();
     QRectF adjustedBoundingRect = rect;
 
     switch (qvGetSettingInt(CropMode)) { // should be enum tbh
@@ -712,7 +771,7 @@ void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
         viewRect.setHeight(viewRect.height() - obscuredHeight);
     } else {
         // stop at actual size
-        viewRect = QRect(QPoint(), getImageDetails().loadedPixmapSize);
+        viewRect = QRect(QPoint(), currentMediaSize());
         QPoint center = this->rect().center();
         center.setY(center.y() - obscuredHeight);
         viewRect.moveCenter(center);
@@ -794,13 +853,116 @@ void QVGraphicsView::centerOn(const QGraphicsItem *item)
 
 void QVGraphicsView::settingsUpdated()
 {
-    if (getImageDetails().isPixmapLoaded)
+    if (hasActiveCanvasItem())
         resetScale();
+}
+
+void QVGraphicsView::ensureVideoView()
+{
+    if (videoView)
+        return;
+
+    videoView = new QVVideoView(scene(), this);
+    connect(videoView, &QVVideoView::nativeSizeChanged, this, [this](const QSizeF &size) {
+        videoNativeSize = size.toSize();
+        if (videoCanvasActive && !videoNativeSize.isEmpty()) {
+            resetScale();
+            emit updatedLoadedPixmapItem();
+        }
+    });
+    connect(videoView, &QVVideoView::videoLoadedChanged, this, [this]() {
+        if (videoCanvasActive && videoView->isLoaded() && !videoNativeSize.isEmpty()) {
+            resetScale();
+            emit updatedLoadedPixmapItem();
+        }
+        emit fileChanged();
+    });
+    connect(videoView, &QVVideoView::playbackStateChanged, this,
+            &QVGraphicsView::videoPlaybackStateChanged);
+    connect(videoView, &QVVideoView::errorOccurred, this, &QVGraphicsView::videoErrorOccurred);
+}
+
+void QVGraphicsView::activateImageCanvas()
+{
+    videoCanvasActive = false;
+    if (videoView)
+        videoView->graphicsItem()->hide();
+    loadedPixmapItem->show();
+}
+
+void QVGraphicsView::activateVideoCanvas()
+{
+    videoCanvasActive = true;
+    videoNativeSize = QSize();
+    loadedPixmapItem->hide();
+    if (videoView)
+        videoView->graphicsItem()->show();
+}
+
+bool QVGraphicsView::hasActiveCanvasItem() const
+{
+    return videoCanvasActive ? videoView && !videoNativeSize.isEmpty()
+                             : getImageDetails().isPixmapLoaded;
+}
+
+QGraphicsItem *QVGraphicsView::activeCanvasItem() const
+{
+    return videoCanvasActive && videoView
+            ? static_cast<QGraphicsItem *>(videoView->graphicsItem())
+            : static_cast<QGraphicsItem *>(loadedPixmapItem);
+}
+
+bool QVGraphicsView::isVideoLoaded() const
+{
+    return videoView && videoView->isLoaded();
+}
+
+bool QVGraphicsView::isVideoPlaying() const
+{
+    return videoView && videoView->isPlaying();
+}
+
+bool QVGraphicsView::isMediaLoaded() const
+{
+    return getImageDetails().isPixmapLoaded || isVideoLoaded();
+}
+
+QString QVGraphicsView::videoErrorString() const
+{
+    return videoView ? videoView->errorString() : QString();
+}
+
+QSize QVGraphicsView::currentMediaSize() const
+{
+    return videoCanvasActive ? videoNativeSize : getImageDetails().loadedPixmapSize;
+}
+
+void QVGraphicsView::reloadVideo()
+{
+    if (videoView)
+        videoView->reloadFile();
+}
+
+void QVGraphicsView::closeVideo()
+{
+    if (!videoView)
+        return;
+
+    videoView->closeVideo();
+    videoView->graphicsItem()->hide();
+    videoNativeSize = QSize();
+}
+
+void QVGraphicsView::toggleVideoPaused()
+{
+    if (videoView)
+        videoView->togglePaused();
 }
 
 void QVGraphicsView::closeImage()
 {
-    emit imageFileRequested();
+    closeVideo();
+    activateImageCanvas();
     imageCore.closeImage();
 }
 
@@ -821,5 +983,13 @@ void QVGraphicsView::setSpeed(const int &desiredSpeed)
 
 void QVGraphicsView::rotateImage(int rotation)
 {
-    imageCore.rotateImage(rotation);
+    if (!videoCanvasActive) {
+        imageCore.rotateImage(rotation);
+        return;
+    }
+
+    QGraphicsItem *item = activeCanvasItem();
+    item->setTransformOriginPoint(item->boundingRect().center());
+    item->setRotation(item->rotation() + rotation);
+    resetScale();
 }

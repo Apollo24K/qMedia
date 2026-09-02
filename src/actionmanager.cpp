@@ -707,37 +707,37 @@ void ActionManager::initializeActionLibrary()
     actionLibrary.insert("rename", renameAction);
 
     auto *zoomInAction = new QAction(QIcon::fromTheme("zoom-in"), tr("Zoom &In"));
-    zoomInAction->setData({ "disable" });
+    zoomInAction->setData({ "mediadisable" });
     actionLibrary.insert("zoomin", zoomInAction);
 
     auto *zoomOutAction = new QAction(QIcon::fromTheme("zoom-out"), tr("Zoom &Out"));
-    zoomOutAction->setData({ "disable" });
+    zoomOutAction->setData({ "mediadisable" });
     actionLibrary.insert("zoomout", zoomOutAction);
 
     auto *resetZoomAction = new QAction(QIcon::fromTheme("zoom-fit-best"), tr("Reset &Zoom"));
-    resetZoomAction->setData({ "disable" });
+    resetZoomAction->setData({ "mediadisable" });
     actionLibrary.insert("resetzoom", resetZoomAction);
 
     auto *originalSizeAction = new QAction(QIcon::fromTheme("zoom-original"), tr("Ori&ginal Size"));
-    originalSizeAction->setData({ "disable" });
+    originalSizeAction->setData({ "mediadisable" });
     actionLibrary.insert("originalsize", originalSizeAction);
 
     auto *rotateRightAction =
             new QAction(QIcon::fromTheme("object-rotate-right"), tr("Rotate &Right"));
-    rotateRightAction->setData({ "disable" });
+    rotateRightAction->setData({ "mediadisable" });
     actionLibrary.insert("rotateright", rotateRightAction);
 
     auto *rotateLeftAction =
             new QAction(QIcon::fromTheme("object-rotate-left"), tr("Rotate &Left"));
-    rotateLeftAction->setData({ "disable" });
+    rotateLeftAction->setData({ "mediadisable" });
     actionLibrary.insert("rotateleft", rotateLeftAction);
 
     auto *mirrorAction = new QAction(QIcon::fromTheme("object-flip-horizontal"), tr("&Mirror"));
-    mirrorAction->setData({ "disable" });
+    mirrorAction->setData({ "mediadisable" });
     actionLibrary.insert("mirror", mirrorAction);
 
     auto *flipAction = new QAction(QIcon::fromTheme("object-flip-vertical"), tr("&Flip"));
-    flipAction->setData({ "disable" });
+    flipAction->setData({ "mediadisable" });
     actionLibrary.insert("flip", flipAction);
 
     auto *toggleTitlebarAction = new QAction(tr("Hide Title&bar"));

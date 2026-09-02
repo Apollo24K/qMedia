@@ -1,48 +1,23 @@
 #include "qvmediaformats.h"
 
-#include <QMimeDatabase>
 #include <QSet>
-
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-#  include <QMediaFormat>
-#else
-#  include <QMediaPlayer>
-#endif
 
 QVMediaFormats::FormatList QVMediaFormats::supportedVideoFormats()
 {
-    QSet<QString> mimeTypes;
-    QMimeDatabase mimeDatabase;
-
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    QMediaFormat mediaFormat;
-    const auto fileFormats = mediaFormat.supportedFileFormats(QMediaFormat::Decode);
-    for (const auto fileFormat : fileFormats) {
-        QMediaFormat candidate(fileFormat);
-        if (candidate.supportedVideoCodecs(QMediaFormat::Decode).isEmpty())
-            continue;
-
-        const QMimeType mimeType = candidate.mimeType();
-        if (mimeType.isValid() && !mimeType.name().startsWith("audio/"))
-            mimeTypes.insert(mimeType.name());
-    }
-#else
-    const auto knownMimeTypes = mimeDatabase.allMimeTypes();
-    for (const QMimeType &mimeType : knownMimeTypes) {
-        if (mimeType.name().startsWith("video/")
-            && QMediaPlayer::hasSupport(mimeType.name(), QStringList(), QMediaPlayer::VideoSurface)
-                    != QMultimedia::NotSupported) {
-            mimeTypes.insert(mimeType.name());
-        }
-    }
-#endif
-
-    QSet<QString> extensions;
-    for (const QString &mimeTypeName : mimeTypes) {
-        const QMimeType mimeType = mimeDatabase.mimeTypeForName(mimeTypeName);
-        for (const QString &suffix : mimeType.suffixes())
-            extensions.insert(QLatin1Char('.') + suffix.toLower());
-    }
+    // Asking the multimedia backend for its supported formats loads that backend
+    // and, with Qt's FFmpeg plugin, a large codec stack. Doing so while constructing
+    // QApplication added seconds to every launch, including image-only launches.
+    // Keep startup classification container-based and let QMediaPlayer report the
+    // uncommon case where the installed backend cannot decode a particular file.
+    const QSet<QString> extensions = { ".3g2",  ".3gp", ".avi", ".m2ts", ".m4v",
+                                       ".mkv",  ".mov", ".mp4", ".mpeg", ".mpg",
+                                       ".mts",  ".ogv", ".ts",  ".webm", ".wmv" };
+    const QSet<QString> mimeTypes = { "video/3gpp",       "video/3gpp2",
+                                      "video/mp4",        "video/mpeg",
+                                      "video/ogg",        "video/quicktime",
+                                      "video/webm",       "video/x-matroska",
+                                      "video/x-ms-wmv",   "video/x-msvideo",
+                                      "video/mp2t" };
 
     FormatList result = { extensions.values(), mimeTypes.values() };
     result.extensions.sort(Qt::CaseInsensitive);

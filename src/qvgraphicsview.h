@@ -9,12 +9,16 @@
 #include <QTimer>
 #include <QFileInfo>
 
+class QGraphicsItem;
+class QVVideoView;
+
 class QVGraphicsView : public QGraphicsView
 {
     Q_OBJECT
 
 public:
     QVGraphicsView(QWidget *parent = nullptr);
+    ~QVGraphicsView() override;
 
     enum class ScaleMode { resetScale, zoom };
     Q_ENUM(ScaleMode)
@@ -50,6 +54,15 @@ public:
     void setSpeed(const int &desiredSpeed);
     void rotateImage(int rotation);
 
+    bool isVideoLoaded() const;
+    bool isVideoPlaying() const;
+    bool isMediaLoaded() const;
+    QString videoErrorString() const;
+    QSize currentMediaSize() const;
+    void reloadVideo();
+    void closeVideo();
+    void toggleVideoPaused();
+
     const QVMediaCatalog::State &getCurrentMedia() const { return imageCore.getCurrentMedia(); }
     const QVImageCore::FileDetails &getImageDetails() const { return imageCore.getImageDetails(); }
     const QPixmap &getLoadedPixmap() const { return imageCore.getLoadedPixmap(); }
@@ -60,11 +73,11 @@ signals:
 
     void fileChanged();
 
-    void imageFileRequested();
-
-    void videoFileRequested(const QString &fileName);
-
     void updatedLoadedPixmapItem();
+
+    void videoPlaybackStateChanged();
+    void videoErrorOccurred();
+    void fullscreenRequested();
 
 protected:
     void wheelEvent(QWheelEvent *event) override;
@@ -86,6 +99,8 @@ protected:
 #endif
 
     void mousePressEvent(QMouseEvent *event) override;
+
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
 
     void mouseMoveEvent(QMouseEvent *event) override;
 
@@ -111,8 +126,16 @@ private slots:
 
 private:
     void updateFilteringMode();
+    void activateImageCanvas();
+    void activateVideoCanvas();
+    void ensureVideoView();
+    bool hasActiveCanvasItem() const;
+    QGraphicsItem *activeCanvasItem() const;
 
     QGraphicsPixmapItem *loadedPixmapItem;
+    QVVideoView *videoView;
+    QSize videoNativeSize;
+    bool videoCanvasActive;
 
     constexpr static int MARGIN = -2;
     constexpr static qreal MAX_EXPENSIVE_SCALING_SIZE = 3;

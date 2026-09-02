@@ -1,19 +1,28 @@
 #include "qvvideoview.h"
 
-#include <QMouseEvent>
+#include <QGraphicsScene>
+#include <QGraphicsVideoItem>
 #include <QUrl>
 
-QVVideoView::QVVideoView(QWidget *parent)
-    : QVideoWidget(parent)
+QVVideoView::QVVideoView(QGraphicsScene *scene, QObject *parent)
+    : QObject(parent)
     , player(this)
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     , audioOutput(this)
 #endif
+    , videoItem(new QGraphicsVideoItem())
 {
-    setAttribute(Qt::WA_OpaquePaintEvent);
-    setStyleSheet("background-color: black;");
+    scene->addItem(videoItem);
+    videoItem->hide();
+    videoItem->setAcceptedMouseButtons(Qt::NoButton);
 
-    player.setVideoOutput(this);
+    player.setVideoOutput(videoItem);
+    connect(videoItem, &QGraphicsVideoItem::nativeSizeChanged, this,
+            [this](const QSizeF &size) {
+                if (!size.isEmpty())
+                    videoItem->setSize(size);
+                emit nativeSizeChanged(size);
+            });
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     player.setAudioOutput(&audioOutput);
     audioOutput.setVolume(1.0);
@@ -29,6 +38,14 @@ QVVideoView::QVVideoView(QWidget *parent)
             [this]() { emit errorOccurred(); });
 #endif
     connect(&player, &QMediaPlayer::mediaStatusChanged, this, &QVVideoView::mediaStatusChanged);
+}
+
+QVVideoView::~QVVideoView()
+{
+    player.setVideoOutput(static_cast<QGraphicsVideoItem *>(nullptr));
+    if (videoItem->scene())
+        videoItem->scene()->removeItem(videoItem);
+    delete videoItem;
 }
 
 void QVVideoView::loadFile(const QString &fileName)
@@ -85,24 +102,6 @@ bool QVVideoView::isPlaying() const
 #else
     return player.state() == QMediaPlayer::PlayingState;
 #endif
-}
-
-void QVVideoView::mousePressEvent(QMouseEvent *event)
-{
-    if (event->button() == Qt::BackButton)
-        emit previousFileRequested();
-    else if (event->button() == Qt::ForwardButton)
-        emit nextFileRequested();
-    else
-        QVideoWidget::mousePressEvent(event);
-}
-
-void QVVideoView::mouseDoubleClickEvent(QMouseEvent *event)
-{
-    if (event->button() == Qt::LeftButton)
-        emit fullscreenRequested();
-    else
-        QVideoWidget::mouseDoubleClickEvent(event);
 }
 
 void QVVideoView::mediaStatusChanged(QMediaPlayer::MediaStatus status)

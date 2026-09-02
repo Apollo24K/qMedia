@@ -32,7 +32,6 @@
 #include <QNetworkRequest>
 #include <QNetworkReply>
 #include <QTemporaryFile>
-#include <QStackedWidget>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow)
 {
@@ -50,13 +49,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     justLaunchedWithImage = false;
     storedWindowState = Qt::WindowNoState;
 
-    // Keep image and video presentation isolated behind one central media stack.
-    mediaStack = new QStackedWidget(this);
-    graphicsView = new QVGraphicsView(mediaStack);
-    videoView = new QVVideoView(mediaStack);
-    mediaStack->addWidget(graphicsView);
-    mediaStack->addWidget(videoView);
-    centralWidget()->layout()->addWidget(mediaStack);
+    // Images and videos share one graphics canvas so navigation and transforms
+    // behave consistently for every visual media type.
+    graphicsView = new QVGraphicsView(this);
+    centralWidget()->layout()->addWidget(graphicsView);
 
     // Hide fullscreen label by default
     ui->fullscreenLabel->hide();
@@ -66,23 +62,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(graphicsView, &QVGraphicsView::updatedLoadedPixmapItem, this,
             &MainWindow::setWindowSize);
     connect(graphicsView, &QVGraphicsView::cancelSlideshow, this, &MainWindow::cancelSlideshow);
-    connect(graphicsView, &QVGraphicsView::imageFileRequested, this, [this]() {
-        videoView->closeVideo();
-        mediaStack->setCurrentWidget(graphicsView);
-    });
-    connect(graphicsView, &QVGraphicsView::videoFileRequested, this,
-            [this](const QString &fileName) {
-                mediaStack->setCurrentWidget(videoView);
-                videoView->loadFile(fileName);
-            });
-    connect(videoView, &QVVideoView::videoLoadedChanged, this, &MainWindow::fileChanged);
-    connect(videoView, &QVVideoView::playbackStateChanged, this, &MainWindow::disableActions);
-    connect(videoView, &QVVideoView::previousFileRequested, this, &MainWindow::previousFile);
-    connect(videoView, &QVVideoView::nextFileRequested, this, &MainWindow::nextFile);
-    connect(videoView, &QVVideoView::fullscreenRequested, this, &MainWindow::toggleFullScreen);
-    connect(videoView, &QVVideoView::errorOccurred, this, [this]() {
-        if (!videoView->errorString().isEmpty())
-            QMessageBox::critical(this, tr("Error"), videoView->errorString());
+    connect(graphicsView, &QVGraphicsView::videoPlaybackStateChanged, this,
+            &MainWindow::disableActions);
+    connect(graphicsView, &QVGraphicsView::fullscreenRequested, this,
+            &MainWindow::toggleFullScreen);
+    connect(graphicsView, &QVGraphicsView::videoErrorOccurred, this, [this]() {
+        if (!graphicsView->videoErrorString().isEmpty())
+            QMessageBox::critical(this, tr("Error"), graphicsView->videoErrorString());
         fileChanged();
     });
 
@@ -295,7 +281,7 @@ void MainWindow::paintEvent(QPaintEvent *event)
 
     // Find the top of the viewport to account for the menu bar if it's inside the window
     // and/or the label that displays titlebar text in full screen mode.
-    const int viewportY = mediaStack->mapTo(this, QPoint()).y();
+    const int viewportY = graphicsView->mapTo(this, QPoint()).y();
     // On macOS, part of the viewport may be additionally covered with the window's translucent
     // titlebar due to full size content view.
     const int unobscuredViewportY = qMax(getTitlebarOverlap(), viewportY);
@@ -447,7 +433,8 @@ void MainWindow::disableActions()
                 } else if (cloneData.last() == "gifdisable") {
                     clone->setEnabled(getImageDetails().isMovieLoaded);
                 } else if (cloneData.last() == "playbackdisable") {
-                    clone->setEnabled(getImageDetails().isMovieLoaded || videoView->isLoaded());
+                    clone->setEnabled(getImageDetails().isMovieLoaded
+                                      || graphicsView->isVideoLoaded());
                 } else if (cloneData.last() == "undodisable") {
                     clone->setEnabled(!lastDeletedFiles.isEmpty()
                                       && !lastDeletedFiles.top().pathInTrash.isEmpty());
@@ -562,7 +549,7 @@ void MainWindow::updateWindowFilePath()
 
 void MainWindow::setWindowSize()
 {
-    if (!getImageDetails().isPixmapLoaded)
+    if (!getIsMediaLoaded())
         return;
 
     // check if the program is configured to resize the window
@@ -584,8 +571,10 @@ void MainWindow::setWindowSize()
             qvApp->getSettingsManager().getInt(SettingsManager::Setting::MaxWindowResizedPercentage)
             / 100.0;
 
-    QSize imageSize = getImageDetails().loadedPixmapSize;
-    imageSize -= QSize(4, 4);
+    QSize mediaSize = graphicsView->currentMediaSize();
+    if (mediaSize.isEmpty())
+        return;
+    mediaSize -= QSize(4, 4);
 
     // Try to grab the current screen
     QScreen *currentScreen = screenContaining(frameGeometry());
@@ -611,25 +600,25 @@ void MainWindow::setWindowSize()
     const QSize minWindowSize = (screenSize * minWindowResizedPercentage).boundedTo(hardLimitSize);
     const QSize maxWindowSize = (screenSize * maxWindowResizedPercentage).boundedTo(hardLimitSize);
 
-    if (imageSize.width() < minWindowSize.width() && imageSize.height() < minWindowSize.height()) {
-        imageSize.scale(minWindowSize, Qt::KeepAspectRatio);
-    } else if (imageSize.width() > maxWindowSize.width()
-               || imageSize.height() > maxWindowSize.height()) {
-        imageSize.scale(maxWindowSize, Qt::KeepAspectRatio);
+    if (mediaSize.width() < minWindowSize.width() && mediaSize.height() < minWindowSize.height()) {
+        mediaSize.scale(minWindowSize, Qt::KeepAspectRatio);
+    } else if (mediaSize.width() > maxWindowSize.width()
+               || mediaSize.height() > maxWindowSize.height()) {
+        mediaSize.scale(maxWindowSize, Qt::KeepAspectRatio);
     }
 
     // Windows reports the wrong minimum width, so we constrain the image size relative to the dpi
     // to stop weirdness with tiny images
 #ifdef Q_OS_WIN
-    auto minimumImageSize = QSize(qRound(logicalDpiX() * 1.5), logicalDpiY() / 2);
-    if (imageSize.boundedTo(minimumImageSize) == imageSize)
-        imageSize = minimumImageSize;
+    auto minimumMediaSize = QSize(qRound(logicalDpiX() * 1.5), logicalDpiY() / 2);
+    if (mediaSize.boundedTo(minimumMediaSize) == mediaSize)
+        mediaSize = minimumMediaSize;
 #endif
 
     // Match center after new geometry
     // This is smoother than a single geometry set for some reason
     QRect oldRect = geometry();
-    resize(imageSize + extraWidgetsSize);
+    resize(mediaSize + extraWidgetsSize);
     QRect newRect = geometry();
     newRect.moveCenter(oldRect.center());
 
@@ -679,7 +668,7 @@ bool MainWindow::getIsPixmapLoaded() const
 
 bool MainWindow::getIsMediaLoaded() const
 {
-    return getImageDetails().isPixmapLoaded || videoView->isLoaded();
+    return graphicsView->isMediaLoaded();
 }
 
 void MainWindow::setJustLaunchedWithImage(bool value)
@@ -770,7 +759,7 @@ void MainWindow::pickUrl()
 void MainWindow::reloadFile()
 {
     if (getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video)
-        videoView->reloadFile();
+        graphicsView->reloadVideo();
     else
         graphicsView->reloadFile();
 }
@@ -862,7 +851,7 @@ void MainWindow::deleteFile(bool permanent)
     const QString filePath = fileInfo.absoluteFilePath();
     const QString fileName = fileInfo.fileName();
 
-    videoView->closeVideo();
+    graphicsView->closeVideo();
     graphicsView->closeImage();
 
     bool success;
@@ -1012,7 +1001,7 @@ void MainWindow::rename()
     auto *renameDialog = new QVRenameDialog(this, getCurrentMedia().fileInfo);
     connect(renameDialog, &QVRenameDialog::newFileToOpen, this, &MainWindow::openFile);
     connect(renameDialog, &QVRenameDialog::readyToRenameFile, this, [this]() {
-        videoView->closeVideo();
+        graphicsView->closeVideo();
         if (auto device = graphicsView->getLoadedMovie().device()) {
             device->close();
         }
@@ -1118,14 +1107,14 @@ void MainWindow::pause()
 {
     const bool isVideo = getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video;
     if (isVideo) {
-        if (!videoView->isLoaded())
+        if (!graphicsView->isVideoLoaded())
             return;
 
-        videoView->togglePaused();
+        graphicsView->toggleVideoPaused();
         const auto pauseActions = qvApp->getActionManager().getAllClonesOfAction("pause", this);
         for (const auto &pauseAction : pauseActions) {
-            pauseAction->setText(videoView->isPlaying() ? tr("Pause") : tr("Res&ume"));
-            pauseAction->setIcon(QIcon::fromTheme(videoView->isPlaying()
+            pauseAction->setText(graphicsView->isVideoPlaying() ? tr("Pause") : tr("Res&ume"));
+            pauseAction->setIcon(QIcon::fromTheme(graphicsView->isVideoPlaying()
                                                           ? "media-playback-pause"
                                                           : "media-playback-start"));
         }

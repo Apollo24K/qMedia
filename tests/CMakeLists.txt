@@ -104,7 +104,6 @@ add_executable(mediacatalogtests
 target_include_directories(mediacatalogtests PRIVATE ../src)
 target_link_libraries(mediacatalogtests PRIVATE
     Qt${QT_VERSION_MAJOR}::Core
-    Qt${QT_VERSION_MAJOR}::Multimedia
     Qt${QT_VERSION_MAJOR}::Test
 )
 add_test(NAME MediaCatalogTests COMMAND mediacatalogtests)

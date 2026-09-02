@@ -2,18 +2,25 @@
 #define QVVIDEOVIEW_H
 
 #include <QMediaPlayer>
-#include <QVideoWidget>
+#include <QObject>
+#include <QSizeF>
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #  include <QAudioOutput>
+#else
+#  include <QMediaContent>
 #endif
 
-class QVVideoView : public QVideoWidget
+class QGraphicsScene;
+class QGraphicsVideoItem;
+
+class QVVideoView : public QObject
 {
     Q_OBJECT
 
 public:
-    explicit QVVideoView(QWidget *parent = nullptr);
+    explicit QVVideoView(QGraphicsScene *scene, QObject *parent = nullptr);
+    ~QVVideoView() override;
 
     void loadFile(const QString &fileName);
     void reloadFile();
@@ -23,19 +30,13 @@ public:
     bool isLoaded() const { return videoLoaded; }
     bool isPlaying() const;
     QString errorString() const { return player.errorString(); }
+    QGraphicsVideoItem *graphicsItem() const { return videoItem; }
 
 signals:
     void playbackStateChanged();
     void videoLoadedChanged();
     void errorOccurred();
-
-    void previousFileRequested();
-    void nextFileRequested();
-    void fullscreenRequested();
-
-protected:
-    void mousePressEvent(QMouseEvent *event) override;
-    void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void nativeSizeChanged(const QSizeF &size);
 
 private:
     void mediaStatusChanged(QMediaPlayer::MediaStatus status);
@@ -44,6 +45,7 @@ private:
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     QAudioOutput audioOutput;
 #endif
+    QGraphicsVideoItem *videoItem;
     QString currentFilePath;
     bool videoLoaded = false;
 };

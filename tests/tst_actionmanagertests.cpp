@@ -12,6 +12,7 @@ public:
 
 private slots:
     void testClonedActionsUntracked();
+    void testCanvasActionsSupportAllVisualMedia();
 };
 
 ActionManagerTests::ActionManagerTests() { }
@@ -39,6 +40,19 @@ void ActionManagerTests::testClonedActionsUntracked()
     QCOMPARE(qvApp->getActionManager().getAllInstancesOfAction("fullscreen").length(),
              fullscreenCount);
     QCOMPARE(qvApp->getActionManager().getAllInstancesOfAction("open").length(), openCount);
+}
+
+void ActionManagerTests::testCanvasActionsSupportAllVisualMedia()
+{
+    const QStringList canvasActions = { "zoomin",      "zoomout",    "resetzoom",
+                                        "originalsize", "rotateright", "rotateleft",
+                                        "mirror",      "flip" };
+    const auto &actionLibrary = qvApp->getActionManager().getActionLibrary();
+    for (const QString &key : canvasActions) {
+        QVERIFY2(actionLibrary.contains(key), qPrintable(key));
+        QCOMPARE(actionLibrary.value(key)->data().toStringList().constLast(),
+                 QString("mediadisable"));
+    }
 }
 
 int main(int argc, char *argv[])

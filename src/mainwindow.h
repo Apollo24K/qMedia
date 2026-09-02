@@ -4,7 +4,6 @@
 #include "qvinfodialog.h"
 #include "qvimagecore.h"
 #include "qvgraphicsview.h"
-#include "qvvideoview.h"
 #include "openwith.h"
 
 #include <QMainWindow>
@@ -15,8 +14,6 @@
 namespace Ui {
 class MainWindow;
 }
-
-class QStackedWidget;
 
 class MainWindow : public QMainWindow
 {
@@ -161,9 +158,7 @@ protected slots:
 
 private:
     Ui::MainWindow *ui;
-    QStackedWidget *mediaStack;
     QVGraphicsView *graphicsView;
-    QVVideoView *videoView;
 
     QMenu *contextMenu;
     QMenu *virtualMenu;
