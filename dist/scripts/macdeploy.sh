@@ -1,18 +1,17 @@
 #!/usr/bin/bash
 
 if [[ -n "$1" ]]; then
-    VERSION=$0
+    VERSION=$1
 else
-    VERSION=$(LC_ALL=C sed -n -e '/^VERSION/p' qView.pro)
-    VERSION=${VERSION: -3}
+    VERSION=$(LC_ALL=C sed -nE 's/^project\(qMedia VERSION ([0-9.]+).*/\1/p' CMakeLists.txt)
 fi
 
 cd bin
 
 echo "Running macdeployqt"
-macdeployqt qView.app
+macdeployqt qMedia.app
 
-IMF_DIR=qView.app/Contents/PlugIns/imageformats
+IMF_DIR=qMedia.app/Contents/PlugIns/imageformats
 if [[ (-f "$IMF_DIR/kimg_heif.dylib" || -f "$IMF_DIR/kimg_heif.so") && -f "$IMF_DIR/libqmacheif.dylib" ]]; then
     # Prefer kimageformats HEIF plugin for proper color space handling
     echo "Removing duplicate HEIF plugin"
@@ -26,22 +25,22 @@ fi
 
 echo "Running codesign"
 if [[ "$APPLE_NOTARIZE_REQUESTED" == "true" ]]; then
-    APP_IDENTIFIER=$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "qView.app/Contents/Info.plist")
-    codesign --sign "$CODESIGN_CERT_NAME" --deep --force --options runtime --timestamp "qView.app"
+    APP_IDENTIFIER=$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "qMedia.app/Contents/Info.plist")
+    codesign --sign "$CODESIGN_CERT_NAME" --deep --force --options runtime --timestamp "qMedia.app"
 else
-    codesign --sign "$CODESIGN_CERT_NAME" --deep --force "qView.app"
+    codesign --sign "$CODESIGN_CERT_NAME" --deep --force "qMedia.app"
 fi
 
 echo "Creating disk image"
 if [[ -n "$1" ]]; then
-    BUILD_NAME=qView-nightly-$1
+    BUILD_NAME=qMedia-nightly-$1
     DMG_FILENAME=$BUILD_NAME.dmg
-    mv qView.app "$BUILD_NAME.app"
+    mv qMedia.app "$BUILD_NAME.app"
     hdiutil create -volname "$BUILD_NAME" -srcfolder "$BUILD_NAME.app" -fs HFS+ "$DMG_FILENAME"
 else
-    DMG_FILENAME=qView-$VERSION.dmg
+    DMG_FILENAME=qMedia-$VERSION.dmg
     brew install create-dmg
-    create-dmg --volname "qView $VERSION" --window-size 660 400 --icon-size 160 --icon "qView.app" 180 170 --hide-extension qView.app --app-drop-link 480 170 "$DMG_FILENAME" "qView.app"
+    create-dmg --volname "qMedia $VERSION" --window-size 660 400 --icon-size 160 --icon "qMedia.app" 180 170 --hide-extension qMedia.app --app-drop-link 480 170 "$DMG_FILENAME" "qMedia.app"
 fi
 if [[ "$APPLE_NOTARIZE_REQUESTED" == "true" ]]; then
     codesign --sign "$CODESIGN_CERT_NAME" --timestamp --identifier "$APP_IDENTIFIER.dmg" "$DMG_FILENAME"

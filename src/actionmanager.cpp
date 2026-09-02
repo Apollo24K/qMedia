@@ -840,7 +840,7 @@ void ActionManager::initializeActionLibrary()
     auto *aboutAction = new QAction(QIcon::fromTheme("help-about"), tr("&About"));
 #ifdef Q_OS_MACOS
     //: This is for the about dialog on mac
-    aboutAction->setText(tr("&About qView"));
+    aboutAction->setText(tr("&About qMedia"));
 #endif
     actionLibrary.insert("about", aboutAction);
 

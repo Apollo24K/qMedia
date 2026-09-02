@@ -72,7 +72,7 @@ SettingsManager::SettingsManager(QObject *parent) : QObject(parent)
 QString SettingsManager::getSystemLanguage() const
 {
     auto entries = QDir(":/i18n/").entryList();
-    entries.prepend("qview_en.ts");
+    entries.prepend("qmedia_en.ts");
     const auto centries = entries;
 
     const auto languages = QLocale::system().uiLanguages();
@@ -81,7 +81,7 @@ QString SettingsManager::getSystemLanguage() const
         const auto countryless = language.left(2);
 
         for (auto entry : centries) {
-            entry.remove(0, 6);
+            entry.remove(0, QStringLiteral("qmedia_").length());
             entry.remove(entry.length() - 3, 3);
 
             if (entry == language)
@@ -104,7 +104,7 @@ bool SettingsManager::loadTranslation() const
         return true;
 
     QTranslator *translator = new QTranslator();
-    bool success = translator->load("qview_" + lang + ".qm", QLatin1String(":/i18n"));
+    bool success = translator->load("qmedia_" + lang + ".qm", QLatin1String(":/i18n"));
     if (success) {
         qInfo() << "Loaded translation" << lang;
         QCoreApplication::installTranslator(translator);

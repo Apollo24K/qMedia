@@ -95,9 +95,9 @@ void UpdateChecker::openDialog()
             QIcon::fromTheme("edit-download", QIcon::fromTheme("document-save")), tr("Download"));
 
     auto *msgBox = new QMessageBox();
-    msgBox->setWindowTitle(tr("qView Update Available"));
+    msgBox->setWindowTitle(tr("qMedia Update Available"));
     msgBox->setText(
-            tr("qView %1 is available to download.").arg(QString::number(latestVersionNum, 'f', 1))
+            tr("qMedia %1 is available to download.").arg(QString::number(latestVersionNum, 'f', 1))
             + "\n\n" + releaseDate.toString(locale.dateFormat()) + "\n\n" + changelog);
     msgBox->setWindowModality(Qt::ApplicationModal);
     msgBox->setStandardButtons(QMessageBox::Close | QMessageBox::Reset);
@@ -110,7 +110,7 @@ void UpdateChecker::openDialog()
         settings.beginGroup("options");
         settings.setValue("updatenotifications", false);
         qvApp->getSettingsManager().loadSettings();
-        QMessageBox::information(nullptr, tr("qView Update Checking Disabled"),
+        QMessageBox::information(nullptr, tr("qMedia Update Checking Disabled"),
                                  tr("Update notifications on startup have been disabled.\nYou can "
                                     "reenable them in the options dialog."),
                                  QMessageBox::Ok);

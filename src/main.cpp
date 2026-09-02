@@ -4,16 +4,37 @@
 #include "qvwin32functions.h"
 
 #include <QCommandLineParser>
+#include <QIcon>
+#include <QSettings>
 #include <QTimer>
+
+namespace {
+void migrateLegacySettings()
+{
+    QSettings currentSettings;
+    const QString migrationKey = QStringLiteral("migration/qViewSettingsImported");
+    if (currentSettings.value(migrationKey, false).toBool())
+        return;
+
+    if (currentSettings.allKeys().isEmpty()) {
+        QSettings legacySettings(QStringLiteral("qView"), QStringLiteral("qView"));
+        for (const QString &key : legacySettings.allKeys())
+            currentSettings.setValue(key, legacySettings.value(key));
+    }
+    currentSettings.setValue(migrationKey, true);
+    currentSettings.sync();
+}
+}
 
 int main(int argc, char *argv[])
 {
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 #endif
-    QCoreApplication::setOrganizationName("qView");
-    QCoreApplication::setApplicationName("qView");
+    QCoreApplication::setOrganizationName("qMedia");
+    QCoreApplication::setApplicationName("qMedia");
     QCoreApplication::setApplicationVersion(QString::number(VERSION));
+    migrateLegacySettings();
 #if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     // The native backend provides working audio on Windows installations where
     // Qt's FFmpeg backend decodes video but produces no audible output. Preserve
@@ -22,6 +43,7 @@ int main(int argc, char *argv[])
         qputenv("QT_MEDIA_BACKEND", QByteArrayLiteral("windows"));
 #endif
     QVApplication app(argc, argv);
+    app.setWindowIcon(QIcon(QStringLiteral(":/images/qMedia-icon.png")));
 
     // QAudioOutput performs expensive once-per-process device initialization on
     // some systems. Start it off the GUI thread after the event loop begins so

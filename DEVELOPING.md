@@ -8,10 +8,8 @@
 - Qt modules: Qt Image Formats, Qt Multimedia, and their dependencies
 - PowerShell 7 for the scripts under `dist/scripts`
 
-The current application links Qt Core, Gui, Network, Widgets, and Svg. Tests also
-need Qt Test, and translations need Qt LinguistTools. Qt Multimedia and its FFmpeg
-backend are installed in preparation for video and audio support but are not linked
-by the application yet.
+The application links Qt Core, Gui, Multimedia, MultimediaWidgets, Network,
+Widgets, and Svg. Tests also need Qt Test, and translations need Qt LinguistTools.
 
 The local SDK used for this repository is:
 
@@ -31,8 +29,7 @@ $env:buildArch = 'X64'
 ./dist/scripts/build.ps1
 ```
 
-The executable is copied to `bin/qView.exe`. The qMedia rename has not yet been
-applied to build targets or executable names.
+The executable is copied to `bin/qMedia.exe`.
 
 ## Build and run tests
 

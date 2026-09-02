@@ -6,5 +6,6 @@
     </qresource>
     <qresource prefix="/images">
         <file>checkmark.png</file>
+        <file>qMedia-icon.png</file>
     </qresource>
 </RCC>

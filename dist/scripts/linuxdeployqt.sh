@@ -23,15 +23,15 @@ chmod a+x linuxdeployqt-continuous-x86_64.AppImage
 
 mkdir -p bin/appdir/usr
 DESTDIR="$PWD/bin/appdir" cmake --install build --prefix /usr
-cp dist/linux/hicolor/scalable/apps/com.interversehq.qView.svg bin/appdir/
+cp dist/linux/hicolor/256x256/apps/io.github.apollo24k.qmedia.png bin/appdir/
 cd bin
-rm qview
+rm qmedia
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/
-../linuxdeployqt-continuous-x86_64.AppImage appdir/usr/share/applications/com.interversehq.qView.desktop -appimage -updateinformation="gh-releases-zsync|jurplel|qView|latest|qView-*x86_64.AppImage.zsync" -extra-plugins=styles/libqt5ct-style.so,platformthemes/libqt5ct.so
+../linuxdeployqt-continuous-x86_64.AppImage appdir/usr/share/applications/io.github.apollo24k.qmedia.desktop -appimage -updateinformation="gh-releases-zsync|Apollo24K|qMedia|latest|qMedia-*x86_64.AppImage.zsync" -extra-plugins=styles/libqt5ct-style.so,platformthemes/libqt5ct.so
 
 if [ -n "$1" ]; then
-    mv *.AppImage qView-nightly-$1-x86_64.AppImage
+    mv *.AppImage qMedia-nightly-$1-x86_64.AppImage
 else
-    mv *.AppImage qView-$VERSION-x86_64.AppImage
+    mv *.AppImage qMedia-$VERSION-x86_64.AppImage
 fi
 rm -r appdir

@@ -1,4 +1,4 @@
-﻿#include "mainwindow.h"
+#include "mainwindow.h"
 #include "openwith.h"
 #include "qvcocoafunctions.h"
 #include "qvwin32functions.h"
@@ -73,8 +73,10 @@ QList<OpenWith::OpenWithItem> OpenWith::getOpenWithItemsFromDesktopFiles(const Q
         auto dir = QDir(location);
         const auto &entryInfoList = dir.entryInfoList();
         for (const auto &fileInfo : entryInfoList) {
-            // Don't add qView to the open with menu!
-            if (fileInfo.fileName() == "qView.desktop"
+            // Don't add qMedia to the open with menu!
+            if (fileInfo.fileName() == "qMedia.desktop"
+                || fileInfo.fileName() == "io.github.apollo24k.qmedia.desktop"
+                || fileInfo.fileName() == "qView.desktop"
                 || fileInfo.fileName() == "com.interversehq.qView.desktop")
                 continue;
 

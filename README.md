@@ -1,31 +1,24 @@
-<h1 align=center>qView</h1>
+<h1 align=center>qMedia</h1>
 
-<p align=center>qView is an image viewer designed with minimalism and usability in mind.</p>
+<p align=center>qMedia is a minimal image and video viewer built from qView.</p>
 
 <h3 align=center>
-    <a href="https://interversehq.com/qview/">Visit the website</a>
+    <a href="https://github.com/Apollo24K/qMedia">View on GitHub</a>
 </h3>
 
 <h4 align=center>
-    <a href="https://interversehq.com/qview/download">Downloads</a> |
-    <a href="https://interversehq.com/qview/changelog">Changelog</a> | <a href="https://interversehq.com/discord">Discord</a>
+    <a href="https://github.com/Apollo24K/qMedia/releases">Downloads</a> |
+    <a href="https://github.com/jurplel/qView">Original qView project</a>
 </h4>
 
 <p align=center>
-    <a href="https://interversehq.com/qview/download">
-        <img alt="Downloads shield" src="https://img.shields.io/github/downloads/jurplel/qview/total?color=blue&style=flat-square">
-    </a>
-    <a href="https://aur.archlinux.org/packages/qview/">
-        <img alt="AUR shield" src="https://img.shields.io/aur/version/qview?style=flat-square">
-    </a>
-    <a href="https://formulae.brew.sh/cask/qview">
-        <img alt="Homebrew cask shield" src="https://img.shields.io/homebrew/cask/v/qview?style=flat-square">
+    <a href="https://github.com/Apollo24K/qMedia/releases">
+        <img alt="Downloads shield" src="https://img.shields.io/github/downloads/Apollo24K/qMedia/total?color=blue&style=flat-square">
     </a>
 </p>
 
-<p align=center>
-    <img alt="Screenshot" src="https://interversehq.com/qview/assets/img/screenshot3.png">
-</p>
+qMedia retains qView's lightweight image-viewing workflow while adding mixed-media
+navigation, video playback, synchronized audio, and shared canvas controls.
 
 ## Development
 

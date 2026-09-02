@@ -59,10 +59,10 @@ QVAboutDialog::QVAboutDialog(double givenLatestVersionNum, QWidget *parent)
     font4.setStyleName("Regular");
     const QString labelText2 =
             tr("Built with Qt %1 (%2)<br>"
-               R"(Source code available under GPLv3 on <a style="color: #03A9F4; text-decoration:none;" href="https://github.com/jurplel/qView">GitHub</a><br>)"
-               "Icon glyph created by Guilhem from the Noun Project<br>"
-               "Copyright © %3 jurplel and qView contributors")
-                    .arg(QT_VERSION_STR, QSysInfo::buildCpuArchitecture(), "2018-2025");
+               R"(Source code available under GPLv3 on <a style="color: #03A9F4; text-decoration:none;" href="https://github.com/Apollo24K/qMedia">GitHub</a><br>)"
+               "qMedia icon by Apollo24K<br>"
+               "Copyright © %3 qMedia contributors; based on qView by jurplel")
+                    .arg(QT_VERSION_STR, QSysInfo::buildCpuArchitecture(), "2018-2026");
 
     ui->infoLabel2->setFont(font4);
     ui->infoLabel2->setText(labelText2);
@@ -103,7 +103,7 @@ void QVAboutDialog::updateText()
 #endif // QV_DISABLE_ONLINE_VERSION_CHECK
     ui->updateLabel->setText(
             updateText
-            + R"(<a style="color: #03A9F4; text-decoration:none;" href="https://interversehq.com/qview/">interversehq.com/qview</a>)");
+            + R"(<a style="color: #03A9F4; text-decoration:none;" href="https://github.com/Apollo24K/qMedia">github.com/Apollo24K/qMedia</a>)");
 }
 
 double QVAboutDialog::getLatestVersionNum() const

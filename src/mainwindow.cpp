@@ -507,7 +507,7 @@ void MainWindow::refreshProperties()
 
 void MainWindow::updateWindowTitle()
 {
-    QString newString = "qView";
+    QString newString = "qMedia";
     if (getCurrentMedia().fileInfo.isFile()) {
         switch (qvApp->getSettingsManager().getInt(SettingsManager::Setting::TitleBarMode)) {
         case 1: {
@@ -529,7 +529,7 @@ void MainWindow::updateWindowTitle()
                 newString += "x" + QString::number(getImageDetails().baseImageSize.height());
             }
             newString += " - " + QVInfoDialog::formatBytes(getCurrentMedia().fileInfo.size());
-            newString += " - qView";
+            newString += " - qMedia";
             break;
         }
         }

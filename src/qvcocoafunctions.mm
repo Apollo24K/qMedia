@@ -255,7 +255,8 @@ QList<OpenWith::OpenWithItem> QVCocoaFunctions::getOpenWithItems(const QString &
 
     QList<OpenWith::OpenWithItem> listOfOpenWithItems;
     for (NSString *appId in supportedApplications) {
-        if ([appId isEqualToString:@"com.qview.qView"] ||
+        if ([appId isEqualToString:@"io.github.apollo24k.qmedia"] ||
+            [appId isEqualToString:@"com.qview.qView"] ||
             [appId isEqualToString:@"com.interversehq.qView"])
             continue;
 

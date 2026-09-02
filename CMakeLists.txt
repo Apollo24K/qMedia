@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(qView VERSION 7.0 LANGUAGES CXX)
+project(qMedia VERSION 7.0 LANGUAGES CXX)
 
 # Optional test building
 option(BUILD_TESTS "Build tests" OFF)
@@ -135,13 +135,13 @@ endif()
 # Add the executable and link Qt libraries
 set(PROJECT_RESOURCES resources/resources.qrc)
 if(WIN32)
-    set(ICON_PATH_RAW "${CMAKE_CURRENT_SOURCE_DIR}/dist/win/qView.ico")
+    set(ICON_PATH_RAW "${CMAKE_CURRENT_SOURCE_DIR}/dist/win/qMedia.ico")
     string(REPLACE "\\" "\\\\" ICON_PATH "${ICON_PATH_RAW}")
     configure_file(
-        "${CMAKE_CURRENT_SOURCE_DIR}/dist/win/qView.rc.in"
-        "${CMAKE_CURRENT_BINARY_DIR}/qView.rc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/dist/win/qMedia.rc.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/qMedia.rc"
     )
-    list(APPEND PROJECT_RESOURCES "${CMAKE_CURRENT_BINARY_DIR}/qView.rc")
+    list(APPEND PROJECT_RESOURCES "${CMAKE_CURRENT_BINARY_DIR}/qMedia.rc")
 endif()
 add_executable(${PROJECT_NAME} ${EXECUTABLE_TYPE} ${PROJECT_SOURCES} ${PROJECT_HEADERS} ${PROJECT_FORMS} ${PROJECT_RESOURCES})
 
@@ -149,7 +149,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT
 
 # Set the executable name to lowercase on Linux
 if(UNIX AND NOT APPLE)
-    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "qview")
+    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "qmedia")
 endif()
 
 # Add compile definitions based on options
@@ -176,9 +176,9 @@ elseif(APPLE)
 
     # Set the icon based on the Qt version, as per the Qt documentation.
     if(QT_VERSION_MAJOR LESS 6)
-        set(MACOSX_BUNDLE_ICON_FILE "qView_legacy.icns")
+        set(MACOSX_BUNDLE_ICON_FILE "qMedia_legacy.icns")
     else()
-        set(MACOSX_BUNDLE_ICON_FILE "qView.icns")
+        set(MACOSX_BUNDLE_ICON_FILE "qMedia.icns")
     endif()
 
     set(app_icon_macos "${CMAKE_CURRENT_SOURCE_DIR}/dist/mac/${MACOSX_BUNDLE_ICON_FILE}")
@@ -229,7 +229,7 @@ endif()
 # Handle translations
 if(Qt${QT_VERSION_MAJOR}LinguistTools_FOUND)
     message(STATUS "LinguistTools found, building translations.")
-    file(GLOB TRANSLATIONS "i18n/qview_*.ts")
+    file(GLOB TRANSLATIONS "i18n/qmedia_*.ts")
     if(QT_VERSION_MAJOR EQUAL 5)
         # For Qt5, use qt5_add_translation (not qt5_add_translations)
         qt5_add_translation(QM_FILES ${TRANSLATIONS})
@@ -252,10 +252,10 @@ install(TARGETS ${PROJECT_NAME}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
-install(FILES dist/linux/com.interversehq.qView.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+install(FILES dist/linux/io.github.apollo24k.qmedia.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 install(DIRECTORY dist/linux/hicolor/ DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor)
-install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/qview)
-install(FILES dist/linux/com.interversehq.qView.appdata.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
+install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/qmedia)
+install(FILES dist/linux/io.github.apollo24k.qmedia.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
 
 # Include tests if requested
 if(BUILD_TESTS)

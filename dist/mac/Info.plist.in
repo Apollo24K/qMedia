@@ -11,7 +11,7 @@
 	<key>CFBundleIconFile</key>
 	<string>@MACOSX_ICON_FILENAME@</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.interversehq.qView</string>
+	<string>io.github.apollo24k.qmedia</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>LSMinimumSystemVersion</key>

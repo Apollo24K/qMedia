@@ -1,4 +1,4 @@
-name: Build qView
+name: Build qMedia
 on:
   push:
   pull_request:
@@ -72,11 +72,11 @@ jobs:
           cache: true
           modules: ${{ matrix.qtModules }}
 
-      - name: Build qView
+      - name: Build qMedia
         shell: pwsh
         run: dist/scripts/build.ps1 -CI
 
-      - name: Deploy qView
+      - name: Deploy qMedia
         env:
           APPLE_NOTARIZE_REQUESTED: ${{ inputs.appleNotarize }}
           APPLE_DEVID_APP_CERT_DATA: ${{ secrets.APPLE_DEVID_APP_CERT_DATA }}
@@ -100,7 +100,7 @@ jobs:
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v4
         with:
-          name: qView${{ env.nightlyString }}-${{ runner.os }}${{ matrix.osSuffix }}-${{ env.buildNumString }}
+          name: qMedia${{ env.nightlyString }}-${{ runner.os }}${{ matrix.osSuffix }}-${{ env.buildNumString }}
           path: bin
 
   nightly-release:
@@ -132,7 +132,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: nightly
-          name: "qView Nightly"
+          name: "qMedia Nightly"
           prerelease: true
           body: |
             Latest automatic build from the master branch. Might be broken.

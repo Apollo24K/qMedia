@@ -538,7 +538,7 @@ void QVOptionsDialog::languageComboBoxCurrentIndexChanged(int index)
     Q_UNUSED(index)
     if (!languageRestartMessageShown) {
         QMessageBox::information(this, tr("Restart Required"),
-                                 tr("You must restart qView to change the language."));
+                                 tr("You must restart qMedia to change the language."));
         languageRestartMessageShown = true;
     }
 }

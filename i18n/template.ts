@@ -282,7 +282,7 @@
     </message>
     <message>
         <location filename="../src/actionmanager.cpp" line="826"/>
-        <source>&amp;About qView</source>
+        <source>&amp;About qMedia</source>
         <extracomment>This is for the about dialog on mac</extracomment>
         <translation type="unfinished"></translation>
     </message>
@@ -503,7 +503,7 @@ No write permission or file is read-only.</source>
     <name>QVAboutDialog</name>
     <message>
         <location filename="../src/qvaboutdialog.ui" line="20"/>
-        <source>About qView</source>
+        <source>About qMedia</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -518,7 +518,7 @@ No write permission or file is read-only.</source>
     </message>
     <message>
         <location filename="../src/qvaboutdialog.cpp" line="62"/>
-        <source>Built with Qt %1 (%2)&lt;br&gt;Source code available under GPLv3 on &lt;a style=&quot;color: #03A9F4; text-decoration:none;&quot; href=&quot;https://github.com/jurplel/qView&quot;&gt;GitHub&lt;/a&gt;&lt;br&gt;Icon glyph created by Guilhem from the Noun Project&lt;br&gt;Copyright © %3 jurplel and qView contributors</source>
+        <source>Built with Qt %1 (%2)&lt;br&gt;Source code available under GPLv3 on &lt;a style=&quot;color: #03A9F4; text-decoration:none;&quot; href=&quot;https://github.com/Apollo24K/qMedia&quot;&gt;GitHub&lt;/a&gt;&lt;br&gt;Icon glyph created by Guilhem from the Noun Project&lt;br&gt;Copyright © %3 jurplel and qMedia contributors</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1048,7 +1048,7 @@ No write permission or file is read-only.</source>
     </message>
     <message>
         <location filename="../src/qvoptionsdialog.ui" line="617"/>
-        <source>Controls whether or not qView should go back to the first item after reaching the end of a folder</source>
+        <source>Controls whether or not qMedia should go back to the first item after reaching the end of a folder</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1099,7 +1099,7 @@ No write permission or file is read-only.</source>
     <message>
         <location filename="../src/qvoptionsdialog.ui" line="720"/>
         <source>&amp;Update notifications on startup</source>
-        <extracomment>The notifications are for new qView releases</extracomment>
+        <extracomment>The notifications are for new qMedia releases</extracomment>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1166,7 +1166,7 @@ No write permission or file is read-only.</source>
     </message>
     <message>
         <location filename="../src/qvoptionsdialog.cpp" line="483"/>
-        <source>You must restart qView to change the language.</source>
+        <source>You must restart qMedia to change the language.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1234,7 +1234,7 @@ No write permission or file is read-only.</source>
     </message>
     <message>
         <location filename="../src/qvwelcomedialog.cpp" line="42"/>
-        <source>Thank you for downloading qView.&lt;br&gt;Here&apos;s a few tips to get you started:</source>
+        <source>Thank you for downloading qMedia.&lt;br&gt;Here&apos;s a few tips to get you started:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1465,12 +1465,12 @@ No write permission or file is read-only.</source>
     </message>
     <message>
         <location filename="../src/updatechecker.cpp" line="97"/>
-        <source>qView Update Available</source>
+        <source>qMedia Update Available</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../src/updatechecker.cpp" line="98"/>
-        <source>qView %1 is available to download.</source>
+        <source>qMedia %1 is available to download.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1480,7 +1480,7 @@ No write permission or file is read-only.</source>
     </message>
     <message>
         <location filename="../src/updatechecker.cpp" line="112"/>
-        <source>qView Update Checking Disabled</source>
+        <source>qMedia Update Checking Disabled</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

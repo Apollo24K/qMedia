@@ -12,7 +12,7 @@
 
 QVApplication::QVApplication(int &argc, char **argv) : QApplication(argc, argv)
 {
-    setDesktopFileName("com.interversehq.qView.desktop");
+    setDesktopFileName("io.github.apollo24k.qmedia.desktop");
 
     // Connections
     connect(&actionManager, &ActionManager::recentsMenuUpdated, this,
@@ -333,7 +333,7 @@ void QVApplication::defineFilterLists()
     // Build the filterlist, filterstring, and filterregexplist in one loop
     for (const auto &byteArray : byteArrayFormats) {
         const auto fileExtension = "." + QString::fromUtf8(byteArray);
-        // Qt 5.15 seems to have added pdf support for QImageReader but it is super broken in qView
+        // Qt 5.15 seems to have added pdf support for QImageReader but it is super broken in qMedia
         if (fileExtension == ".pdf")
             continue;
 
@@ -360,7 +360,7 @@ void QVApplication::defineFilterLists()
     const auto &byteArrayMimeTypes = QImageReader::supportedMimeTypes();
     mimeTypeNameList.reserve(byteArrayMimeTypes.size() - 1);
     for (const auto &byteArray : byteArrayMimeTypes) {
-        // Qt 5.15 seems to have added pdf support for QImageReader but it is super broken in qView
+        // Qt 5.15 seems to have added pdf support for QImageReader but it is super broken in qMedia
         const QString mime = QString::fromUtf8(byteArray);
         if (mime == "application/pdf")
             continue;
