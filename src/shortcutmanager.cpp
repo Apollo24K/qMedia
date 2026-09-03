@@ -125,7 +125,7 @@ void ShortcutManager::initializeShortcutsList()
                            "resetzoom",
                            QStringList(QKeySequence(Qt::CTRL | Qt::Key_0).toString()),
                            {} });
-    shortcutsList.append({ tr("Original Size"),
+    shortcutsList.append({ tr("Reset View"),
                            "originalsize",
                            QStringList(QKeySequence(Qt::Key_O).toString()),
                            {} });

@@ -43,6 +43,7 @@ public:
     void makeUnscaled();
 
     void resetScale();
+    void resetView();
     void originalSize();
 
     void goToFile(const GoToFileMode &mode, int index = 0);

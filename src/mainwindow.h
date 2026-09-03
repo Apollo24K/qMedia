@@ -83,7 +83,7 @@ public:
 
     void resetZoom();
 
-    void originalSize();
+    void resetView();
 
     void rotateRight();
 

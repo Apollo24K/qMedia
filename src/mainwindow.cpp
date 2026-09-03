@@ -1029,9 +1029,9 @@ void MainWindow::resetZoom()
     graphicsView->resetScale();
 }
 
-void MainWindow::originalSize()
+void MainWindow::resetView()
 {
-    graphicsView->originalSize();
+    graphicsView->resetView();
 }
 
 void MainWindow::rotateRight()

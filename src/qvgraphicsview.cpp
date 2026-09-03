@@ -646,6 +646,30 @@ void QVGraphicsView::resetScale()
         expensiveScaleTimerNew->start();
 }
 
+void QVGraphicsView::resetView()
+{
+    // An in-flight navigation must not restore the view the user just reset.
+    navigationCanvasState.valid = false;
+    resetCanvasForNewMedia();
+
+    // Image rotation is baked into decoded pixels; video rotation lives on its
+    // graphics item and was cleared above. Also clear the retained image rotation
+    // while viewing video so it cannot reappear on the next image.
+    const int rotation = imageCore.getCurrentRotation();
+    if (rotation != 0) {
+        imageCore.rotateImage(-rotation);
+        if (!videoCanvasActive)
+            return; // The image-core signal already rebuilt and fitted the pixmap.
+    }
+
+    if (videoCanvasActive) {
+        emit updatedLoadedPixmapItem();
+        resetScale();
+    } else {
+        updateLoadedPixmapItem();
+    }
+}
+
 void QVGraphicsView::originalSize()
 {
     restoreCenterAfterExpensiveScale = false;

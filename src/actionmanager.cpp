@@ -595,7 +595,7 @@ void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *releva
     } else if (key == "resetzoom") {
         relevantWindow->resetZoom();
     } else if (key == "originalsize") {
-        relevantWindow->originalSize();
+        relevantWindow->resetView();
     } else if (key == "rotateright") {
         relevantWindow->rotateRight();
     } else if (key == "rotateleft") {
@@ -732,7 +732,8 @@ void ActionManager::initializeActionLibrary()
     resetZoomAction->setData({ "mediadisable" });
     actionLibrary.insert("resetzoom", resetZoomAction);
 
-    auto *originalSizeAction = new QAction(QIcon::fromTheme("zoom-original"), tr("Ori&ginal Size"));
+    // Retain the action key so existing O/custom shortcut bindings keep working.
+    auto *originalSizeAction = new QAction(QIcon::fromTheme("zoom-fit-best"), tr("Reset &View"));
     originalSizeAction->setData({ "mediadisable" });
     actionLibrary.insert("originalsize", originalSizeAction);
 
