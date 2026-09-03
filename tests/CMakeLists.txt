@@ -19,6 +19,7 @@ set(TEST_SOURCES
     ../src/qvimagecore.cpp
     ../src/qvmediacatalog.cpp
     ../src/qvmediaformats.cpp
+    ../src/qvclipboard.cpp
     ../src/qvvideoview.cpp
     ../src/qvshortcutdialog.cpp
     ../src/actionmanager.cpp
@@ -92,6 +93,9 @@ endif()
 
 # Add the test
 add_test(NAME ActionManagerTests COMMAND actionmanagertests)
+add_test(NAME SvgHighDpiTests COMMAND actionmanagertests testSvgViewport)
+set_tests_properties(SvgHighDpiTests PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=2")
 
 # Media catalog tests stay independent of widgets and image decoding.
 add_executable(mediacatalogtests
@@ -107,3 +111,10 @@ target_link_libraries(mediacatalogtests PRIVATE
     Qt${QT_VERSION_MAJOR}::Test
 )
 add_test(NAME MediaCatalogTests COMMAND mediacatalogtests)
+
+add_executable(clipboardtests tst_clipboardtests.cpp
+    ../src/qvclipboard.cpp ../src/qvmediaformats.cpp)
+target_include_directories(clipboardtests PRIVATE ../src)
+target_link_libraries(clipboardtests PRIVATE Qt${QT_VERSION_MAJOR}::Gui
+    Qt${QT_VERSION_MAJOR}::Test)
+add_test(NAME ClipboardTests COMMAND clipboardtests)

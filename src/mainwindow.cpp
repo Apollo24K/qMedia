@@ -3,6 +3,7 @@
 #include "qvapplication.h"
 #include "qvcocoafunctions.h"
 #include "qvrenamedialog.h"
+#include "qvclipboard.h"
 
 #include <QFileDialog>
 #include <QMessageBox>
@@ -680,66 +681,78 @@ void MainWindow::setJustLaunchedWithImage(bool value)
     justLaunchedWithImage = value;
 }
 
-void MainWindow::openUrl(const QUrl &url)
+void MainWindow::openUrl(const QUrl &url, const QImage &fallback)
 {
-    if (!url.isValid()) {
-        QMessageBox::critical(this, tr("Error"), tr("Error: URL is invalid"));
+    if (!url.isValid() || (url.scheme() != "http" && url.scheme() != "https")) {
+        QMessageBox::critical(this, tr("Error"), tr("Enter a direct HTTP or HTTPS media URL."));
         return;
     }
 
-    auto request = QNetworkRequest(url);
+    auto *tempFile = new QTemporaryFile(qvApp);
+    tempFile->setFileTemplate(QDir::tempPath() + "/qMedia-XXXXXX");
+    if (!tempFile->open()) {
+        QMessageBox::critical(this, tr("Error"), tempFile->errorString());
+        delete tempFile;
+        return;
+    }
+    QNetworkRequest request(url);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
     auto *reply = networkAccessManager.get(request);
-    auto *progressDialog = new QProgressDialog(tr("Downloading image..."), tr("Cancel"), 0, 100);
-    progressDialog->setWindowFlag(Qt::WindowContextHelpButtonHint, false);
-    progressDialog->setAutoClose(false);
-    progressDialog->setAutoReset(false);
-    progressDialog->setWindowTitle(tr("Open URL..."));
-    progressDialog->open();
-
-    connect(progressDialog, &QProgressDialog::canceled, reply, [reply] { reply->abort(); });
-
-    connect(reply, &QNetworkReply::downloadProgress, progressDialog,
-            [progressDialog](qreal bytesReceived, qreal bytesTotal) {
-                auto percent = (bytesReceived / bytesTotal) * 100;
-                progressDialog->setValue(qRound(percent));
+    auto *progress = new QProgressDialog(tr("Downloading media..."), tr("Cancel"), 0, 0, this);
+    progress->setWindowTitle(tr("Open URL..."));
+    progress->setAutoClose(false);
+    progress->setAutoReset(false);
+    progress->open();
+    connect(progress, &QProgressDialog::canceled, reply, &QNetworkReply::abort);
+    connect(reply, &QNetworkReply::downloadProgress, progress,
+            [progress](qint64 received, qint64 total) {
+                progress->setRange(0, total > 0 ? 100 : 0);
+                if (total > 0)
+                    progress->setValue(int(100.0 * received / total));
             });
-
-    connect(reply, &QNetworkReply::finished, progressDialog, [progressDialog, reply, this] {
-        if (reply->error()) {
-            progressDialog->close();
-            QMessageBox::critical(this, tr("Error"),
-                                  tr("Error ") + QString::number(reply->error()) + ": "
-                                          + reply->errorString());
-
-            progressDialog->deleteLater();
-            return;
+    // Drain each chunk on the reply's owning thread; large videos stay off the heap.
+    connect(reply, &QNetworkReply::readyRead, this, [reply, tempFile] {
+        const QByteArray chunk = reply->readAll();
+        if (tempFile->write(chunk) != chunk.size()) {
+            reply->setProperty("saveError", tempFile->errorString());
+            reply->abort();
         }
-
-        progressDialog->setMaximum(0);
-
-        auto *tempFile = new QTemporaryFile(this);
-        tempFile->setFileTemplate(QDir::tempPath() + "/" + qvApp->applicationName()
-                                  + ".XXXXXX.png");
-
-        auto *saveFutureWatcher = new QFutureWatcher<bool>();
-        connect(saveFutureWatcher, &QFutureWatcher<bool>::finished, this,
-                [progressDialog, tempFile, saveFutureWatcher, this]() {
-                    progressDialog->close();
-                    if (saveFutureWatcher->result()) {
-                        if (tempFile->open()) {
-                            openFile(tempFile->fileName());
-                        }
-                    } else {
-                        QMessageBox::critical(this, tr("Error"), tr("Error: Invalid image"));
-                        tempFile->deleteLater();
-                    }
-                    progressDialog->deleteLater();
-                    saveFutureWatcher->deleteLater();
-                });
-
-        saveFutureWatcher->setFuture(QtConcurrent::run([reply, tempFile] {
-            return QImage::fromData(reply->readAll()).save(tempFile, "png");
-        }));
+    });
+    connect(reply, &QNetworkReply::finished, this, [this, reply, tempFile, progress, fallback] {
+        progress->close();
+        progress->deleteLater();
+        reply->deleteLater();
+        QString error = reply->property("saveError").toString();
+        if (reply->error() != QNetworkReply::NoError && error.isEmpty()) {
+            if (reply->error() != QNetworkReply::OperationCanceledError)
+                error = reply->errorString();
+        } else if (error.isEmpty()) {
+            const QByteArray tail = reply->readAll();
+            if (tempFile->write(tail) != tail.size() || !tempFile->flush())
+                error = tempFile->errorString();
+            else {
+                tempFile->seek(0);
+                const QString suffix = QVClipboard::mediaSuffix(tempFile->read(65536),
+                        reply->header(QNetworkRequest::ContentTypeHeader).toString(), reply->url());
+                tempFile->close();
+                if (suffix.isEmpty())
+                    error = tr("The URL did not return supported image or video data. Use a direct media link.");
+                else if (!tempFile->rename(tempFile->fileName() + "." + suffix))
+                    error = tempFile->errorString();
+                else {
+                    openFile(tempFile->fileName());
+                    return;
+                }
+            }
+        }
+        tempFile->deleteLater();
+        if (!error.isEmpty()) {
+            if (!fallback.isNull())
+                saveClipboardMedia({}, {}, fallback);
+            else
+                QMessageBox::critical(this, tr("Error"), error);
+        }
     });
 }
 
@@ -747,7 +760,7 @@ void MainWindow::pickUrl()
 {
     auto inputDialog = new QInputDialog(this);
     inputDialog->setWindowTitle(tr("Open URL..."));
-    inputDialog->setLabelText(tr("URL of a supported image file:"));
+    inputDialog->setLabelText(tr("URL of a supported image or video file:"));
     inputDialog->resize(350, inputDialog->height());
     inputDialog->setWindowFlag(Qt::WindowContextHelpButtonHint, false);
     connect(inputDialog, &QInputDialog::finished, this, [inputDialog, this](int result) {
@@ -982,19 +995,53 @@ void MainWindow::copy()
 void MainWindow::paste()
 {
     const QMimeData *mimeData = QApplication::clipboard()->mimeData();
-    if (mimeData == nullptr)
+    if (!mimeData)
         return;
+    const auto media = QVClipboard::read(*mimeData);
+    if (!media.urls.isEmpty()) {
+        bool first = true;
+        for (const QUrl &url : media.urls) {
+            if (url.isLocalFile()) {
+                if (first) openFile(url.toLocalFile());
+                else QVApplication::openFile(url.toLocalFile());
+            } else {
+                openUrl(url, media.image);
+            }
+            first = false;
+        }
+        return;
+    }
+    saveClipboardMedia(media.bytes, media.mimeType, media.image);
+}
 
-    if (mimeData->hasText()) {
-        auto url = QUrl(mimeData->text());
-
-        if (url.isValid() && (url.scheme() == "http" || url.scheme() == "https")) {
-            openUrl(url);
+void MainWindow::saveClipboardMedia(const QByteArray &bytes, const QString &mimeType, const QImage &image)
+{
+    const QString suffix = !bytes.isEmpty()
+            ? QVClipboard::mediaSuffix(bytes.left(65536), mimeType)
+            : (!image.isNull() ? QString("png") : QString());
+    if (suffix.isEmpty()) {
+        if (!image.isNull() && !bytes.isEmpty()) {
+            saveClipboardMedia({}, {}, image);
             return;
         }
+        QMessageBox::information(this, tr("Paste"),
+                tr("The clipboard contains no supported image, video, file path, or direct media URL."));
+        return;
     }
-
-    graphicsView->loadMimeData(mimeData);
+    auto *file = new QTemporaryFile(qvApp);
+    file->setFileTemplate(QDir::tempPath() + "/qMedia-XXXXXX." + suffix);
+    bool saved = file->open();
+    if (saved)
+        saved = bytes.isEmpty() ? image.save(file, "PNG")
+                                : file->write(bytes) == bytes.size();
+    saved = saved && file->flush();
+    file->close();
+    if (saved)
+        openFile(file->fileName());
+    else {
+        QMessageBox::critical(this, tr("Error"), tr("Could not save clipboard media to a temporary file."));
+        file->deleteLater();
+    }
 }
 
 void MainWindow::rename()

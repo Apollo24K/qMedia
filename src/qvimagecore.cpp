@@ -155,6 +155,10 @@ QVImageCore::ReadData QVImageCore::readFile(const QString &fileName,
         QIcon icon;
         icon.addFile(fileName);
         readImage = icon.pixmap(largestDimension).toImage();
+        // QIcon tags this raster with the screen's device pixel ratio. The media
+        // canvas tracks physical image pixels and applies display scaling itself;
+        // retaining the icon ratio shrinks the item relative to its zoom bounds.
+        readImage.setDevicePixelRatio(1.0);
         // If this fails, try reading the normal way so that a proper error message is given
         if (readImage.isNull())
             readImage = imageReader.read();

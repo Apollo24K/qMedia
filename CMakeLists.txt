@@ -61,6 +61,7 @@ set(PROJECT_SOURCES
     src/qvimagecore.cpp
     src/qvmediacatalog.cpp
     src/qvmediaformats.cpp
+    src/qvclipboard.cpp
     src/qvvideoview.cpp
     src/qvshortcutdialog.cpp
     src/actionmanager.cpp

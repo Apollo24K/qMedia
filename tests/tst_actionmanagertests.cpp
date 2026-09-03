@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QImage>
 #include <QTemporaryDir>
+#include <QBuffer>
 
 class ActionManagerTests : public QObject
 {
@@ -21,6 +22,7 @@ private slots:
     void testPlaybackActionsAndDefaultShortcuts();
     void testMediaBackendSetting();
     void testImageRequestAfterVideoIsNotDiscarded();
+    void testSvgViewport();
 };
 
 ActionManagerTests::ActionManagerTests() { }
@@ -162,6 +164,36 @@ void ActionManagerTests::testImageRequestAfterVideoIsNotDiscarded()
     window.openFile(imagePath);
     QCOMPARE(window.getCurrentMedia().mediaType, QVMediaCatalog::MediaType::Image);
     QTRY_VERIFY_WITH_TIMEOUT(window.getImageDetails().isPixmapLoaded, 2000);
+}
+
+void ActionManagerTests::testSvgViewport()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QImage embedded(100, 150, QImage::Format_ARGB32);
+    embedded.fill(Qt::red);
+    QByteArray png;
+    QBuffer buffer(&png);
+    QVERIFY(buffer.open(QIODevice::WriteOnly));
+    QVERIFY(embedded.save(&buffer, "PNG"));
+    const QByteArray svg =
+            "<svg xmlns='http://www.w3.org/2000/svg' "
+            "xmlns:xlink='http://www.w3.org/1999/xlink' width='20px' height='30px'>"
+            "<g transform='scale(0.2)'><use xlink:href='#image' width='100' height='150'/></g>"
+            "<defs><image id='image' width='100' height='150' xlink:href='data:image/png;base64,"
+            + png.toBase64() + "'/></defs></svg>";
+    QFile file(directory.filePath("viewport.svg"));
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    QCOMPARE(file.write(svg), qint64(svg.size()));
+    file.close();
+    QVImageCore core;
+    const auto decoded = core.readFile(file.fileName(), QColorSpace());
+    QVERIFY(!decoded.errorData.hasError);
+    QCOMPARE(decoded.imageSize, QSize(20, 30));
+    const QImage image = decoded.image;
+    QVERIFY(!image.isNull());
+    QCOMPARE(image.devicePixelRatio(), qreal(1));
+    QCOMPARE(image.pixelColor(image.width() * 9 / 10, image.height() * 9 / 10), QColor(Qt::red));
 }
 
 int main(int argc, char *argv[])

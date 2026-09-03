@@ -51,7 +51,7 @@ public:
 
     void openRecent(int i);
 
-    void openUrl(const QUrl &url);
+    void openUrl(const QUrl &url, const QImage &fallback = QImage());
 
     void pickUrl();
 
@@ -165,6 +165,8 @@ protected slots:
     void shortcutsUpdated();
 
 private:
+    void saveClipboardMedia(const QByteArray &bytes, const QString &mimeType, const QImage &image);
+
     Ui::MainWindow *ui;
     QVGraphicsView *graphicsView;
 
