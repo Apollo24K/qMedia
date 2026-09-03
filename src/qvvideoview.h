@@ -6,6 +6,8 @@
 #include <QObject>
 #include <QSizeF>
 
+#include "qvplaybackloopmode.h"
+
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #  include <QAudioOutput>
 #  include <QVideoFrame>
@@ -39,6 +41,7 @@ public:
     void stepFrame(int direction);
     void seekToPercent(int percent);
     void setPlaybackSpeed(int percent);
+    void setLoopMode(QVPlaybackLoopMode mode);
 
     bool isLoaded() const { return videoLoaded; }
     bool isPlaying() const;
@@ -64,6 +67,7 @@ private:
     void fadeInAudio();
 #endif
     void setSynchronizedPosition(qint64 position);
+    void restartPlayback();
 
     QMediaPlayer player;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
@@ -85,6 +89,7 @@ private:
     int playbackSpeedPercent = 100;
     bool muted = false;
     bool pauseOnNextVideoFrame = false;
+    QVPlaybackLoopMode loopMode = QVPlaybackLoopMode::Default;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     quint64 audioSyncGeneration = 0;
     bool audioSynchronizationPending = false;

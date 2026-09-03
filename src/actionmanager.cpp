@@ -58,6 +58,8 @@ QAction *ActionManager::addCloneOfAction(QWidget *parent, const QString &key)
         newAction->setData(action->data());
         newAction->setText(action->text());
         newAction->setMenuRole(action->menuRole());
+        newAction->setCheckable(action->isCheckable());
+        newAction->setChecked(action->isChecked());
         newAction->setEnabled(action->isEnabled());
         newAction->setShortcuts(action->shortcuts());
         newAction->setVisible(action->isVisible());
@@ -271,6 +273,7 @@ QMenu *ActionManager::buildToolsMenu(bool addIcon, QWidget *parent)
     addCloneOfAction(toolsMenu, "saveframeas");
     addCloneOfAction(toolsMenu, "pause");
     addCloneOfAction(toolsMenu, "mute");
+    addCloneOfAction(toolsMenu, "loop");
     addCloneOfAction(toolsMenu, "previousframe");
     addCloneOfAction(toolsMenu, "nextframe");
     toolsMenu->addSeparator();
@@ -617,6 +620,8 @@ void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *releva
         relevantWindow->pause();
     } else if (key == "mute") {
         relevantWindow->toggleMute();
+    } else if (key == "loop") {
+        relevantWindow->toggleLoop();
     } else if (key == "previousframe") {
         relevantWindow->previousFrame();
     } else if (key == "nextframe") {
@@ -787,6 +792,12 @@ void ActionManager::initializeActionLibrary()
     auto *muteAction = new QAction(QIcon::fromTheme("audio-volume-high"), tr("&Mute"));
     muteAction->setData({ "videodisable" });
     actionLibrary.insert("mute", muteAction);
+
+    auto *loopAction =
+            new QAction(QIcon::fromTheme("media-playlist-repeat"), tr("&Loop Playback"));
+    loopAction->setCheckable(true);
+    loopAction->setData({ "playbackdisable" });
+    actionLibrary.insert("loop", loopAction);
 
     auto *previousFrameAction =
             new QAction(QIcon::fromTheme("media-skip-backward"), tr("&Previous Frame"));

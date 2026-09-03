@@ -46,6 +46,7 @@ QVGraphicsView::QVGraphicsView(QWidget *parent) : QGraphicsView(parent)
     videoView = nullptr;
     mediaRequestGeneration = 0;
     videoCanvasActive = false;
+    loopMode = QVPlaybackLoopMode::Default;
 
     zoomBasisScaleFactor = 1.0;
 
@@ -874,6 +875,7 @@ void QVGraphicsView::ensureVideoView()
     QElapsedTimer initializationTimer;
     initializationTimer.start();
     videoView = new QVVideoView(scene(), this);
+    videoView->setLoopMode(loopMode);
     videoView->recordInitializationDuration(initializationTimer.elapsed());
     connect(videoView, &QVVideoView::nativeSizeChanged, this, [this](const QSizeF &size) {
         if (size.isEmpty())
@@ -1072,6 +1074,16 @@ void QVGraphicsView::setVideoPlaybackSpeed(int percent)
 {
     if (videoView)
         videoView->setPlaybackSpeed(percent);
+}
+
+void QVGraphicsView::togglePlaybackLoopMode()
+{
+    const bool mediaLoopsByDefault = !videoCanvasActive
+            && imageCore.currentAnimationLoopsByDefault();
+    loopMode = nextManualLoopMode(loopMode, mediaLoopsByDefault);
+    imageCore.setLoopMode(loopMode);
+    if (videoView)
+        videoView->setLoopMode(loopMode);
 }
 
 void QVGraphicsView::rotateImage(int rotation)

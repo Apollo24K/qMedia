@@ -82,6 +82,7 @@ set(PROJECT_HEADERS
     src/qvimagecore.h
     src/qvmediacatalog.h
     src/qvmediaformats.h
+    src/qvplaybackloopmode.h
     src/qvvideoview.h
     src/qvshortcutdialog.h
     src/actionmanager.h

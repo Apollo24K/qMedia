@@ -1194,6 +1194,17 @@ void MainWindow::toggleMute()
     }
 }
 
+void MainWindow::toggleLoop()
+{
+    if (!getImageDetails().isMovieLoaded && !graphicsView->isVideoLoaded())
+        return;
+
+    graphicsView->togglePlaybackLoopMode();
+    const auto loopActions = qvApp->getActionManager().getAllClonesOfAction("loop", this);
+    for (const auto &loopAction : loopActions)
+        loopAction->setChecked(graphicsView->isLoopingForced());
+}
+
 void MainWindow::seekToPercent(int percent)
 {
     const bool isVideo = getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video;

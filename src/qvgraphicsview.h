@@ -2,6 +2,7 @@
 #define QVGRAPHICSVIEW_H
 
 #include "qvimagecore.h"
+#include "qvplaybackloopmode.h"
 #include <QGraphicsView>
 #include <QImageReader>
 #include <QMimeData>
@@ -68,6 +69,8 @@ public:
     bool isVideoMuted() const;
     int videoPlaybackSpeed() const;
     void setVideoPlaybackSpeed(int percent);
+    void togglePlaybackLoopMode();
+    bool isLoopingForced() const { return loopMode == QVPlaybackLoopMode::ForceLoop; }
 
     const QVMediaCatalog::State &getCurrentMedia() const { return imageCore.getCurrentMedia(); }
     const QVImageCore::FileDetails &getImageDetails() const { return imageCore.getImageDetails(); }
@@ -144,6 +147,7 @@ private:
     QSize videoNativeSize;
     quint64 mediaRequestGeneration;
     bool videoCanvasActive;
+    QVPlaybackLoopMode loopMode;
 
     constexpr static int MARGIN = -2;
     constexpr static qreal MAX_EXPENSIVE_SCALING_SIZE = 3;

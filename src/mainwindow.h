@@ -107,6 +107,8 @@ public:
 
     void toggleMute();
 
+    void toggleLoop();
+
     void previousFrame();
 
     void nextFrame();

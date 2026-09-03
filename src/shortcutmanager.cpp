@@ -49,7 +49,10 @@ void ShortcutManager::initializeShortcutsList()
                            "reloadfile",
                            keyBindingsToStringList(QKeySequence::Refresh),
                            {} });
-    shortcutsList.append({ tr("Open Containing Folder"), "opencontainingfolder", {}, {} });
+    shortcutsList.append({ tr("Open Containing Folder"),
+                           "opencontainingfolder",
+                           QStringList(QKeySequence(Qt::Key_E).toString()),
+                           {} });
     // Sets open containing folder action name to platform-appropriate alternative
 #ifdef Q_OS_WIN
     shortcutsList.last().readableName = tr("Show in Explorer");
@@ -161,6 +164,8 @@ void ShortcutManager::initializeShortcutsList()
                            {} });
     shortcutsList.append(
             { tr("Mute"), "mute", QStringList(QKeySequence(Qt::Key_M).toString()), {} });
+    shortcutsList.append(
+            { tr("Loop Playback"), "loop", QStringList(QKeySequence(Qt::Key_L).toString()), {} });
     shortcutsList.append({ tr("Previous Frame"),
                            "previousframe",
                            QStringList(QKeySequence(Qt::Key_Comma).toString()),
@@ -189,8 +194,10 @@ void ShortcutManager::initializeShortcutsList()
                                {} });
     }
     shortcutsList.append({ tr("Toggle Slideshow"), "slideshow", {}, {} });
-    shortcutsList.append(
-            { tr("Settings"), "options", keyBindingsToStringList(QKeySequence::Preferences), {} });
+    shortcutsList.append({ tr("Settings"),
+                           "options",
+                           QStringList(QKeySequence(Qt::Key_S).toString()),
+                           {} });
     if (QOperatingSystemVersion::current()
         < QOperatingSystemVersion(QOperatingSystemVersion::MacOS, 13)) {
         shortcutsList.last().readableName = tr("Preferences");

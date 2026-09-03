@@ -24,6 +24,25 @@ QVImageCore::QVImageCore(QObject *parent) : QObject(parent)
     currentRotation = 0;
 
     connect(&loadedMovie, &QMovie::updated, this, &QVImageCore::animatedFrameChanged);
+    connect(&loadedMovie, &QMovie::frameChanged, this, [this](int frameNumber) {
+        if (loopMode == QVPlaybackLoopMode::ForceStop && loadedMovie.frameCount() > 0
+            && frameNumber == loadedMovie.frameCount() - 1) {
+            loadedMovie.setPaused(true);
+            animationStoppedAtEnd = true;
+        }
+    });
+    connect(&loadedMovie, &QMovie::finished, this, [this]() {
+        animationStoppedAtEnd = true;
+        const bool shouldLoop = loopMode == QVPlaybackLoopMode::ForceLoop
+                || (loopMode == QVPlaybackLoopMode::Default
+                    && !animationHasNativeLoopBehavior);
+        if (!shouldLoop || !currentFileDetails.isMovieLoaded)
+            return;
+
+        animationStoppedAtEnd = false;
+        loadedMovie.jumpToFrame(0);
+        loadedMovie.start();
+    });
 
     connect(&loadFutureWatcher, &QFutureWatcher<ReadData>::finished, this,
             [this]() { loadPixmap(loadFutureWatcher.result()); });
@@ -228,6 +247,7 @@ void QVImageCore::loadPixmap(const ReadData &readData)
     // Animation detection
     loadedMovie.setFormat("");
     loadedMovie.stop();
+    animationStoppedAtEnd = false;
     loadedMovie.setFileName(mediaCatalog.state().fileInfo.absoluteFilePath());
 
     // APNG workaround
@@ -235,6 +255,16 @@ void QVImageCore::loadPixmap(const ReadData &readData)
         loadedMovie.setFormat("apng");
         loadedMovie.setFileName(mediaCatalog.state().fileInfo.absoluteFilePath());
     }
+
+    // QMovie follows embedded finite/infinite loop counts on its own. Formats
+    // without a native loop concept report a one-shot movie, which qMedia treats
+    // as looping by default for consistency with other animated images.
+    const QByteArray movieFormat = loadedMovie.format().toLower();
+    const QList<QByteArray> formatsWithNativeLoopBehavior = {
+        "gif", "webp", "apng", "png", "mng", "avif"
+    };
+    animationHasNativeLoopBehavior = loadedMovie.loopCount() != 0
+            || formatsWithNativeLoopBehavior.contains(movieFormat);
 
     if (loadedMovie.isValid() && loadedMovie.frameCount() != 1)
         loadedMovie.start();
@@ -263,6 +293,7 @@ void QVImageCore::loadEmptyPixmap()
 {
     loadedPixmap = QPixmap();
     loadedMovie.stop();
+    animationStoppedAtEnd = false;
     loadedMovie.setFileName("");
 
     emit fileChanged();
@@ -539,6 +570,23 @@ void QVImageCore::setSpeed(int desiredSpeed)
 
     if (currentFileDetails.isMovieLoaded)
         loadedMovie.setSpeed(desiredSpeed);
+}
+
+void QVImageCore::setLoopMode(QVPlaybackLoopMode mode)
+{
+    loopMode = mode;
+    if (loopMode == QVPlaybackLoopMode::ForceLoop && animationStoppedAtEnd
+        && currentFileDetails.isMovieLoaded) {
+        animationStoppedAtEnd = false;
+        loadedMovie.jumpToFrame(0);
+        loadedMovie.start();
+    }
+}
+
+bool QVImageCore::currentAnimationLoopsByDefault() const
+{
+    return currentFileDetails.isMovieLoaded
+            && (loadedMovie.loopCount() != 0 || !animationHasNativeLoopBehavior);
 }
 
 void QVImageCore::rotateImage(int rotation)

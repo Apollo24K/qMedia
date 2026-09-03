@@ -12,6 +12,7 @@
 #include <QElapsedTimer>
 
 #include "qvmediacatalog.h"
+#include "qvplaybackloopmode.h"
 
 #if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
 #  include <QColorSpace>
@@ -78,6 +79,7 @@ public:
     void seekToPercent(int percent);
     void setPaused(bool desiredState);
     void setSpeed(int desiredSpeed);
+    void setLoopMode(QVPlaybackLoopMode mode);
 
     void rotateImage(int rotation);
     QImage matchCurrentRotation(const QImage &imageToRotate);
@@ -91,6 +93,7 @@ public:
     const QMovie &getLoadedMovie() const { return loadedMovie; }
     const QVMediaCatalog::State &getCurrentMedia() const { return mediaCatalog.state(); }
     const FileDetails &getImageDetails() const { return currentFileDetails; }
+    bool currentAnimationLoopsByDefault() const;
     bool isLoadInProgress() const { return waitingOnLoad; }
     int getCurrentRotation() const { return currentRotation; }
 
@@ -128,6 +131,9 @@ private:
     int largestDimension;
 
     bool waitingOnLoad;
+    QVPlaybackLoopMode loopMode = QVPlaybackLoopMode::Default;
+    bool animationStoppedAtEnd = false;
+    bool animationHasNativeLoopBehavior = true;
 };
 
 #endif // QVIMAGECORE_H

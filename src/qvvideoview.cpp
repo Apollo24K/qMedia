@@ -487,6 +487,44 @@ void QVVideoView::setPlaybackSpeed(int percent)
 #endif
 }
 
+void QVVideoView::setLoopMode(QVPlaybackLoopMode mode)
+{
+    loopMode = mode;
+    if (loopMode == QVPlaybackLoopMode::ForceLoop && videoLoaded
+        && player.mediaStatus() == QMediaPlayer::EndOfMedia) {
+        restartPlayback();
+    }
+}
+
+void QVVideoView::restartPlayback()
+{
+    pauseOnNextVideoFrame = false;
+    player.setPosition(0);
+    player.play();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    if (audioPlayer && !audioSynchronizationPending) {
+        ++audioSyncGeneration;
+        const quint64 generation = audioSyncGeneration;
+        audioPlayer->setPosition(0);
+        audioPlayer->play();
+        QTimer::singleShot(75, this, [this, generation]() {
+            if (generation != audioSyncGeneration || !audioPlayer
+                || audioSynchronizationPending) {
+                return;
+            }
+
+            if (qAbs(audioPlayer->position() - player.position()) > 100)
+                audioPlayer->setPosition(player.position());
+            if (isPlaying())
+                audioPlayer->play();
+            else
+                audioPlayer->pause();
+        });
+    }
+#endif
+    profileEvent(QStringLiteral("playback looped"));
+}
+
 void QVVideoView::setSynchronizedPosition(qint64 position)
 {
     position = qBound<qint64>(0, position, qMax<qint64>(0, player.duration()));
@@ -526,6 +564,10 @@ bool QVVideoView::isPlaying() const
 void QVVideoView::mediaStatusChanged(QMediaPlayer::MediaStatus status)
 {
     profileEvent(QStringLiteral("media status"), mediaStatusName(status));
+    if (status == QMediaPlayer::EndOfMedia && loopMode == QVPlaybackLoopMode::ForceLoop) {
+        restartPlayback();
+        return;
+    }
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     if (status == QMediaPlayer::EndOfMedia && lastVideoFrame.isValid()) {
         const QImage finalImage = lastVideoFrame.toImage();

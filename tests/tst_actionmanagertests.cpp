@@ -2,6 +2,7 @@
 
 #include "qvapplication.h"
 #include "qvoptionsdialog.h"
+#include "qvplaybackloopmode.h"
 #include <QFile>
 #include <QImage>
 #include <QTemporaryDir>
@@ -65,7 +66,8 @@ void ActionManagerTests::testCanvasActionsSupportAllVisualMedia()
 void ActionManagerTests::testPlaybackActionsAndDefaultShortcuts()
 {
     const auto &actionLibrary = qvApp->getActionManager().getActionLibrary();
-    const QStringList sharedPlaybackActions = { "pause",         "previousframe",
+    const QStringList sharedPlaybackActions = { "pause",         "loop",
+                                                "previousframe",
                                                 "nextframe",     "decreasespeed",
                                                 "resetspeed",    "increasespeed" };
     for (const QString &key : sharedPlaybackActions) {
@@ -91,6 +93,25 @@ void ActionManagerTests::testPlaybackActionsAndDefaultShortcuts()
 
     QVERIFY(defaultShortcuts.value("pause").contains(QKeySequence(Qt::Key_Space).toString()));
     QVERIFY(defaultShortcuts.value("mute").contains(QKeySequence(Qt::Key_M).toString()));
+    QVERIFY(defaultShortcuts.value("loop").contains(QKeySequence(Qt::Key_L).toString()));
+    QCOMPARE(defaultShortcuts.value("opencontainingfolder"),
+             QStringList(QKeySequence(Qt::Key_E).toString()));
+    QCOMPARE(defaultShortcuts.value("options"),
+             QStringList(QKeySequence(Qt::Key_S).toString()));
+    QVERIFY(actionLibrary.value("loop")->isCheckable());
+    QMenu cloneParent;
+    const auto loopClone = qvApp->getActionManager().addCloneOfAction(&cloneParent, "loop");
+    QVERIFY(loopClone);
+    QVERIFY(loopClone->isCheckable());
+    qvApp->getActionManager().untrackClonedActions(cloneParent.actions());
+    QCOMPARE(nextManualLoopMode(QVPlaybackLoopMode::Default, false),
+             QVPlaybackLoopMode::ForceLoop);
+    QCOMPARE(nextManualLoopMode(QVPlaybackLoopMode::Default, true),
+             QVPlaybackLoopMode::ForceStop);
+    QCOMPARE(nextManualLoopMode(QVPlaybackLoopMode::ForceLoop, false),
+             QVPlaybackLoopMode::ForceStop);
+    QCOMPARE(nextManualLoopMode(QVPlaybackLoopMode::ForceStop, true),
+             QVPlaybackLoopMode::ForceLoop);
     QVERIFY(defaultShortcuts.value("previousframe")
                     .contains(QKeySequence(Qt::Key_Comma).toString()));
     QCOMPARE(ShortcutManager::stringListToKeySequenceList(
