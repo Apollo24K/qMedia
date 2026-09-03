@@ -134,7 +134,12 @@ QVVideoView::QVVideoView(QGraphicsScene *scene, QObject *parent)
                             : player.position();
                     const qint64 toleranceMs = qMax<qint64>(2, displayedFrameDurationMs / 2);
                     bool reachedTarget;
-                    if (frameStepDirection > 0) {
+                    if (frameStepWrapped) {
+                        reachedTarget = qAbs(frameStartMs - frameStepTargetMs) <= toleranceMs
+                                && (frameStepDirection > 0
+                                            ? frameStartMs < frameStepOriginMs
+                                            : frameStartMs > frameStepOriginMs);
+                    } else if (frameStepDirection > 0) {
                         reachedTarget = frameStartMs + toleranceMs >= frameStepTargetMs;
                     } else if (frameStepDirection < 0) {
                         reachedTarget = frameStepTargetMs == 0
@@ -534,12 +539,27 @@ void QVVideoView::stepFrame(int direction)
     const int normalizedDirection = direction > 0 ? 1 : -1;
     const qint64 basePosition = frameStepPending ? frameStepTargetMs : displayedFrameStartMs;
     frameStepOriginMs = displayedFrameStartMs;
-    frameStepTargetMs = qBound<qint64>(0,
-                                      basePosition + normalizedDirection * frameDuration,
-                                      qMax<qint64>(0, player.duration()));
+    const qint64 duration = qMax<qint64>(0, player.duration());
+    const qint64 unwrappedTarget = basePosition + normalizedDirection * frameDuration;
+    if (normalizedDirection > 0
+        && (player.mediaStatus() == QMediaPlayer::EndOfMedia
+            || unwrappedTarget >= duration - qMax<qint64>(1, frameDuration / 2))) {
+        frameStepTargetMs = 0;
+    } else if (normalizedDirection < 0 && unwrappedTarget < 0) {
+        frameStepTargetMs = qMax<qint64>(0, duration - frameDuration);
+    } else {
+        frameStepTargetMs = qBound<qint64>(0, unwrappedTarget, duration);
+    }
+    frameStepWrapped = (normalizedDirection > 0 && frameStepTargetMs < frameStepOriginMs)
+            || (normalizedDirection < 0 && frameStepTargetMs > frameStepOriginMs);
     frameStepDirection = frameStepTargetMs == displayedFrameStartMs ? 0 : normalizedDirection;
     frameStepPending = true;
     pauseOnNextVideoFrame = false;
+    if (frameStepWrapped && normalizedDirection > 0 && frameStepTargetMs == 0
+        && firstVideoFrame.isValid()) {
+        showHeldVideoFrame(firstVideoFrame);
+        loopRestartFramePending = true;
+    }
 
     player.setPosition(frameStepTargetMs);
     if (audioPlayer && !audioSynchronizationPending) {
@@ -673,6 +693,23 @@ void QVVideoView::mediaStatusChanged(QMediaPlayer::MediaStatus status)
     bool frameStepReachedEnd = false;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     if (status == QMediaPlayer::EndOfMedia && frameStepPending) {
+        if (frameStepDirection > 0) {
+            frameStepOriginMs = displayedFrameStartMs;
+            frameStepTargetMs = 0;
+            frameStepWrapped = true;
+            if (firstVideoFrame.isValid()) {
+                showHeldVideoFrame(firstVideoFrame);
+                loopRestartFramePending = true;
+            }
+            if (audioPlayer && !audioSynchronizationPending) {
+                ++audioSyncGeneration;
+                audioPlayer->pause();
+                audioPlayer->setPosition(0);
+            }
+            player.setPosition(0);
+            player.play();
+            return;
+        }
         frameStepPending = false;
         frameStepReachedEnd = true;
         if (audioPlayer)

@@ -534,7 +534,17 @@ void QVImageCore::jumpToNextFrame()
 {
     if (currentFileDetails.isMovieLoaded) {
         loadedMovie.setPaused(true);
-        loadedMovie.jumpToNextFrame();
+        const int frameCount = loadedMovie.frameCount();
+        if (frameCount > 0) {
+            const int nextFrame = (loadedMovie.currentFrameNumber() + 1) % frameCount;
+            if (nextFrame == 0)
+                animationStoppedAtEnd = false;
+            loadedMovie.jumpToFrame(nextFrame);
+        } else if (!loadedMovie.jumpToNextFrame()) {
+            // Some handlers cannot report a frame count but can still rewind.
+            animationStoppedAtEnd = false;
+            loadedMovie.jumpToFrame(0);
+        }
     }
 }
 
@@ -544,7 +554,10 @@ void QVImageCore::jumpToPreviousFrame()
         return;
 
     loadedMovie.setPaused(true);
-    loadedMovie.jumpToFrame(qMax(0, loadedMovie.currentFrameNumber() - 1));
+    const int previousFrame = loadedMovie.currentFrameNumber() > 0
+            ? loadedMovie.currentFrameNumber() - 1
+            : qMax(0, loadedMovie.frameCount() - 1);
+    loadedMovie.jumpToFrame(previousFrame);
 }
 
 void QVImageCore::seekToPercent(int percent)

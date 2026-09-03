@@ -101,6 +101,7 @@ private:
     int frameStepDirection = 0;
     qint64 frameStepOriginMs = 0;
     qint64 frameStepTargetMs = 0;
+    bool frameStepWrapped = false;
 #endif
     bool videoLoaded = false;
 };
