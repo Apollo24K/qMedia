@@ -128,6 +128,32 @@ QVVideoView::QVVideoView(QGraphicsScene *scene, QObject *parent)
                 } else {
                     endFrameItem->hide();
                 }
+                if (frameStepPending) {
+                    const qint64 frameStartMs = frame.startTime() >= 0
+                            ? frame.startTime() / 1000
+                            : player.position();
+                    const qint64 toleranceMs = qMax<qint64>(2, displayedFrameDurationMs / 2);
+                    bool reachedTarget;
+                    if (frameStepDirection > 0) {
+                        reachedTarget = frameStartMs + toleranceMs >= frameStepTargetMs;
+                    } else if (frameStepDirection < 0) {
+                        reachedTarget = frameStepTargetMs == 0
+                                ? frameStartMs <= toleranceMs
+                                : frameStartMs < frameStepOriginMs
+                                        && frameStartMs <= frameStepTargetMs + toleranceMs;
+                    } else {
+                        reachedTarget = qAbs(frameStartMs - frameStepTargetMs) <= toleranceMs;
+                    }
+                    if (reachedTarget) {
+                        frameStepPending = false;
+                        player.pause();
+                        if (audioPlayer && !audioSynchronizationPending) {
+                            ++audioSyncGeneration;
+                            audioPlayer->pause();
+                            audioPlayer->setPosition(player.position());
+                        }
+                    }
+                }
                 if (pauseOnNextVideoFrame) {
                     pauseOnNextVideoFrame = false;
                     player.pause();
@@ -326,7 +352,7 @@ void QVVideoView::trySynchronizeAudioPlayback()
             return;
         }
 
-        if (isPlaying())
+        if (isPlaying() && !frameStepPending)
             audioPlayer->play();
         else
             audioPlayer->pause();
@@ -389,6 +415,7 @@ void QVVideoView::loadFile(const QString &fileName)
     firstVideoFrame = QVideoFrame();
     lastVideoFrame = QVideoFrame();
     loopRestartFramePending = false;
+    frameStepPending = false;
     endFrameItem->hide();
 #endif
     currentFilePath = fileName;
@@ -430,6 +457,7 @@ void QVVideoView::closeVideo()
     firstVideoFrame = QVideoFrame();
     lastVideoFrame = QVideoFrame();
     loopRestartFramePending = false;
+    frameStepPending = false;
     endFrameItem->hide();
     ++audioSyncGeneration;
     audioSynchronizationPending = false;
@@ -459,6 +487,9 @@ void QVVideoView::togglePaused()
     if (!videoLoaded)
         return;
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    frameStepPending = false;
+#endif
     if (isPlaying())
         player.pause();
     else
@@ -499,12 +530,33 @@ void QVVideoView::stepFrame(int direction)
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     if (audioPlayer)
         audioPlayer->pause();
-#endif
+    const qint64 frameDuration = qMax<qint64>(1, displayedFrameDurationMs);
+    const int normalizedDirection = direction > 0 ? 1 : -1;
+    const qint64 basePosition = frameStepPending ? frameStepTargetMs : displayedFrameStartMs;
+    frameStepOriginMs = displayedFrameStartMs;
+    frameStepTargetMs = qBound<qint64>(0,
+                                      basePosition + normalizedDirection * frameDuration,
+                                      qMax<qint64>(0, player.duration()));
+    frameStepDirection = frameStepTargetMs == displayedFrameStartMs ? 0 : normalizedDirection;
+    frameStepPending = true;
+    pauseOnNextVideoFrame = false;
+
+    player.setPosition(frameStepTargetMs);
+    if (audioPlayer && !audioSynchronizationPending) {
+        ++audioSyncGeneration;
+        audioPlayer->setPosition(frameStepTargetMs);
+    }
+    // A paused QMediaPlayer does not consistently render a newly sought frame
+    // on every backend. Run only the visual decoder until the requested frame
+    // reaches the sink; the callback above pauses it again immediately.
+    player.play();
+#else
     const qint64 frameDuration = qMax<qint64>(1, displayedFrameDurationMs);
     const qint64 targetPosition = direction > 0
             ? displayedFrameStartMs + frameDuration
             : qMax<qint64>(0, displayedFrameStartMs - frameDuration);
     setSynchronizedPosition(targetPosition);
+#endif
 }
 
 void QVVideoView::seekToPercent(int percent)
@@ -512,6 +564,9 @@ void QVVideoView::seekToPercent(int percent)
     if (!videoLoaded || player.duration() <= 0)
         return;
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    frameStepPending = false;
+#endif
     percent = qBound(0, percent, 100);
     setSynchronizedPosition(qRound64(player.duration() * (percent / 100.0)));
 }
@@ -542,6 +597,7 @@ void QVVideoView::restartPlayback()
 {
     pauseOnNextVideoFrame = false;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    frameStepPending = false;
     if (firstVideoFrame.isValid() && !loopRestartFramePending)
         showHeldVideoFrame(firstVideoFrame);
     loopRestartFramePending = firstVideoFrame.isValid();
@@ -574,6 +630,9 @@ void QVVideoView::restartPlayback()
 
 void QVVideoView::setSynchronizedPosition(qint64 position)
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    frameStepPending = false;
+#endif
     position = qBound<qint64>(0, position, qMax<qint64>(0, player.duration()));
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     const bool needsPlaybackToRender = videoLoaded
@@ -611,7 +670,17 @@ bool QVVideoView::isPlaying() const
 void QVVideoView::mediaStatusChanged(QMediaPlayer::MediaStatus status)
 {
     profileEvent(QStringLiteral("media status"), mediaStatusName(status));
-    if (status == QMediaPlayer::EndOfMedia && loopMode == QVPlaybackLoopMode::ForceLoop) {
+    bool frameStepReachedEnd = false;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    if (status == QMediaPlayer::EndOfMedia && frameStepPending) {
+        frameStepPending = false;
+        frameStepReachedEnd = true;
+        if (audioPlayer)
+            audioPlayer->pause();
+    }
+#endif
+    if (status == QMediaPlayer::EndOfMedia && !frameStepReachedEnd
+        && loopMode == QVPlaybackLoopMode::ForceLoop) {
         restartPlayback();
         return;
     }

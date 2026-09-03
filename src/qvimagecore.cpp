@@ -23,6 +23,9 @@ QVImageCore::QVImageCore(QObject *parent) : QObject(parent)
 
     currentRotation = 0;
 
+    // Retain decoded frames so reverse jumps do not depend on a sequential
+    // animation decoder being able to rewind efficiently.
+    loadedMovie.setCacheMode(QMovie::CacheAll);
     connect(&loadedMovie, &QMovie::updated, this, &QVImageCore::animatedFrameChanged);
     connect(&loadedMovie, &QMovie::frameChanged, this, [this](int frameNumber) {
         if (loopMode == QVPlaybackLoopMode::ForceStop && loadedMovie.frameCount() > 0

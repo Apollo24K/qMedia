@@ -97,6 +97,10 @@ private:
     bool audioSynchronizationPending = false;
     bool audioSyncAttemptScheduled = false;
     bool loopRestartFramePending = false;
+    bool frameStepPending = false;
+    int frameStepDirection = 0;
+    qint64 frameStepOriginMs = 0;
+    qint64 frameStepTargetMs = 0;
 #endif
     bool videoLoaded = false;
 };
