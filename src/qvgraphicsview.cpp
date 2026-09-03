@@ -426,6 +426,13 @@ void QVGraphicsView::loadFile(const QString &fileName)
             return;
         }
         const bool wasVideoCanvasActive = videoCanvasActive;
+        // Images bake rotation into their decoded pixels. Transfer the video
+        // orientation before decoding, while image update signals are still hidden.
+        if (wasVideoCanvasActive && navigationCanvasState.valid) {
+            const int rotationDelta = navigationCanvasState.rotation - imageCore.getCurrentRotation();
+            if (rotationDelta != 0)
+                imageCore.rotateImage(rotationDelta);
+        }
         closeVideo();
         if (wasVideoCanvasActive)
             resetCanvasForNewMedia();
@@ -1014,12 +1021,15 @@ void QVGraphicsView::saveCanvasStateForNeighborNavigation()
     if (!navigationCanvasState.valid)
         return;
 
-    navigationCanvasState.mediaSize = currentMediaSize();
+    navigationCanvasState.mediaSize = orientedMediaSize();
     navigationCanvasState.normalizedCenter = normalizedCanvasCenter() + canvasCenterRoundingError;
-    navigationCanvasState.viewportWidthRatio =
-            absoluteTransform.mapRect(QRectF(QPointF(), currentMediaSize())).width()
-            / viewport()->width();
+    navigationCanvasState.viewportWidthRatio = canvasDisplayWidth() / viewport()->width();
     navigationCanvasState.originalSize = isOriginalSize;
+    navigationCanvasState.rotation = videoCanvasActive
+            ? (qRound(activeCanvasItem()->rotation()) % 360 + 360) % 360
+            : imageCore.getCurrentRotation();
+    navigationCanvasState.mirrored = transform().m11() < 0;
+    navigationCanvasState.flipped = transform().m22() < 0;
 }
 
 bool QVGraphicsView::restoreCanvasStateForLoadedMedia()
@@ -1034,7 +1044,11 @@ bool QVGraphicsView::restoreCanvasStateForLoadedMedia()
 
     const NavigationCanvasState savedState = navigationCanvasState;
     navigationCanvasState.valid = false;
-    const QSize newSize = currentMediaSize();
+    const QSize newSize = orientedMediaSize();
+    // Orientation is carried between neighbors just as it has always been for
+    // images. Only pan/zoom restoration depends on a matching aspect ratio.
+    setTransform(QTransform::fromScale(savedState.mirrored ? -1 : 1,
+                                       savedState.flipped ? -1 : 1));
     // Exact rational equality, without floating-point aspect-ratio tolerances.
     if (qint64(savedState.mediaSize.width()) * newSize.height()
         != qint64(newSize.width()) * savedState.mediaSize.height())
@@ -1044,11 +1058,12 @@ bool QVGraphicsView::restoreCanvasStateForLoadedMedia()
     if (savedState.originalSize && savedState.mediaSize == newSize) {
         expensiveScaleTimerNew->stop();
         originalSize();
+        scale(savedState.mirrored ? -1 : 1, savedState.flipped ? -1 : 1);
+        zoomBasis = transform();
     } else {
         // Preserve the fraction of media visible, including when fit-to-view
         // stops at native size for one resolution but not the other.
-        const qreal fittedWidth =
-                absoluteTransform.mapRect(QRectF(QPointF(), currentMediaSize())).width();
+        const qreal fittedWidth = canvasDisplayWidth();
         const qreal factor = savedState.viewportWidthRatio * viewport()->width() / fittedWidth;
         if (!qFuzzyCompare(factor, qreal(1.0)))
             zoom(factor);
@@ -1062,12 +1077,29 @@ bool QVGraphicsView::restoreCanvasStateForLoadedMedia()
     return true;
 }
 
+QSize QVGraphicsView::orientedMediaSize() const
+{
+    QSize size = currentMediaSize();
+    if (videoCanvasActive && qRound(activeCanvasItem()->rotation()) % 180 != 0)
+        size.transpose();
+    return size;
+}
+
+qreal QVGraphicsView::canvasDisplayWidth() const
+{
+    if (videoCanvasActive)
+        return transform().mapRect(activeCanvasItem()->sceneBoundingRect()).width();
+    // Image pixmaps may have been resampled; use the logical scale to avoid
+    // accumulating resampling-rounding errors over repeated navigation.
+    return absoluteTransform.mapRect(QRectF(QPointF(), currentMediaSize())).width();
+}
+
 QPointF QVGraphicsView::normalizedCanvasCenter() const
 {
-    const QGraphicsItem *item = activeCanvasItem();
-    const QRectF bounds = item->boundingRect();
-    const QPointF itemCenter = item->mapFromScene(
-            viewportTransform().inverted().map(canvasViewportCenter()));
+    // Scene bounds include video rotation; image rotation is already baked into
+    // pixels. This gives both representations the same oriented coordinates.
+    const QRectF bounds = activeCanvasItem()->sceneBoundingRect();
+    const QPointF itemCenter = viewportTransform().inverted().map(canvasViewportCenter());
     return QPointF((itemCenter.x() - bounds.left()) / bounds.width(),
                    (itemCenter.y() - bounds.top()) / bounds.height());
 }
@@ -1086,11 +1118,10 @@ void QVGraphicsView::centerOnNormalizedCanvasPoint(const QPointF &normalizedPoin
     if (!hasActiveCanvasItem())
         return;
 
-    QGraphicsItem *item = activeCanvasItem();
-    const QRectF bounds = item->boundingRect();
+    const QRectF bounds = activeCanvasItem()->sceneBoundingRect();
     const QPointF itemPoint(bounds.left() + normalizedPoint.x() * bounds.width(),
                             bounds.top() + normalizedPoint.y() * bounds.height());
-    const QPointF delta = viewportTransform().map(item->mapToScene(itemPoint))
+    const QPointF delta = viewportTransform().map(itemPoint)
             - canvasViewportCenter();
     horizontalScrollBar()->setValue(horizontalScrollBar()->value()
                                      + qRound(delta.x()) * (isRightToLeft() ? -1 : 1));
@@ -1107,6 +1138,11 @@ void QVGraphicsView::updateVideoCanvasSize(const QSize &size)
         return;
 
     videoLayoutSize = size;
+    if (navigationCanvasState.valid) {
+        QGraphicsItem *item = activeCanvasItem();
+        item->setTransformOriginPoint(item->boundingRect().center());
+        item->setRotation(navigationCanvasState.rotation);
+    }
     emit updatedLoadedPixmapItem();
     if (!restoreCanvasStateForLoadedMedia())
         resetScale();

@@ -142,6 +142,9 @@ private:
         QPointF normalizedCenter;
         qreal viewportWidthRatio = 1.0;
         bool originalSize = false;
+        int rotation = 0;
+        bool mirrored = false;
+        bool flipped = false;
     };
 
     void updateFilteringMode();
@@ -151,6 +154,8 @@ private:
     void saveCanvasStateForNeighborNavigation();
     bool restoreCanvasStateForLoadedMedia();
     QPointF normalizedCanvasCenter() const;
+    QSize orientedMediaSize() const;
+    qreal canvasDisplayWidth() const;
     QPointF canvasViewportCenter() const;
     void centerOnNormalizedCanvasPoint(const QPointF &normalizedPoint);
     void updateVideoCanvasSize(const QSize &size);
