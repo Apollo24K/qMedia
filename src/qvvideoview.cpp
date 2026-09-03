@@ -91,9 +91,20 @@ QVVideoView::QVVideoView(QGraphicsScene *scene, QObject *parent)
     });
     connect(videoItem->videoSink(), &QVideoSink::videoFrameChanged, this,
             [this](const QVideoFrame &frame) {
-                if (!frame.isValid())
+                if (!frame.isValid()) {
+                    const qint64 endToleranceMs = qMax<qint64>(100, displayedFrameDurationMs * 2);
+                    if (loopMode == QVPlaybackLoopMode::ForceLoop && videoLoaded
+                        && firstVideoFrame.isValid() && !loopRestartFramePending
+                        && player.duration() > 0
+                        && player.position() >= player.duration() - endToleranceMs) {
+                        loopRestartFramePending = true;
+                        showHeldVideoFrame(firstVideoFrame);
+                    }
                     return;
+                }
 
+                if (!firstVideoFrame.isValid())
+                    firstVideoFrame = frame;
                 lastVideoFrame = frame;
                 if (frame.startTime() >= 0)
                     displayedFrameStartMs = frame.startTime() / 1000;
@@ -105,7 +116,18 @@ QVVideoView::QVVideoView(QGraphicsScene *scene, QObject *parent)
                     profileFirstFramePending = false;
                     profileEvent(QStringLiteral("first valid video frame"));
                 }
-                endFrameItem->hide();
+                if (loopRestartFramePending) {
+                    const qint64 frameStartMs = frame.startTime() / 1000;
+                    const qint64 firstFrameStartMs = firstVideoFrame.startTime() / 1000;
+                    const qint64 startToleranceMs = qMax<qint64>(100, displayedFrameDurationMs * 2);
+                    if (frame.startTime() < 0 || firstVideoFrame.startTime() < 0
+                        || qAbs(frameStartMs - firstFrameStartMs) <= startToleranceMs) {
+                        loopRestartFramePending = false;
+                        endFrameItem->hide();
+                    }
+                } else {
+                    endFrameItem->hide();
+                }
                 if (pauseOnNextVideoFrame) {
                     pauseOnNextVideoFrame = false;
                     player.pause();
@@ -326,6 +348,22 @@ void QVVideoView::fadeInAudio()
     audioFadeAnimation->setEndValue(1.0);
     audioFadeAnimation->start();
 }
+
+void QVVideoView::showHeldVideoFrame(const QVideoFrame &frame)
+{
+    if (!frame.isValid())
+        return;
+
+    const QImage image = frame.toImage();
+    if (image.isNull())
+        return;
+
+    endFrameItem->setPixmap(QPixmap::fromImage(image));
+    const QSizeF videoSize = videoItem->size();
+    endFrameItem->setTransform(QTransform::fromScale(videoSize.width() / image.width(),
+                                                     videoSize.height() / image.height()));
+    endFrameItem->show();
+}
 #endif
 
 void QVVideoView::loadFile(const QString &fileName)
@@ -348,7 +386,9 @@ void QVVideoView::loadFile(const QString &fileName)
     displayedFrameDurationMs = 40;
     pauseOnNextVideoFrame = false;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    firstVideoFrame = QVideoFrame();
     lastVideoFrame = QVideoFrame();
+    loopRestartFramePending = false;
     endFrameItem->hide();
 #endif
     currentFilePath = fileName;
@@ -387,7 +427,9 @@ void QVVideoView::closeVideo()
     profileFirstFramePending = false;
     pauseOnNextVideoFrame = false;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    firstVideoFrame = QVideoFrame();
     lastVideoFrame = QVideoFrame();
+    loopRestartFramePending = false;
     endFrameItem->hide();
     ++audioSyncGeneration;
     audioSynchronizationPending = false;
@@ -499,6 +541,11 @@ void QVVideoView::setLoopMode(QVPlaybackLoopMode mode)
 void QVVideoView::restartPlayback()
 {
     pauseOnNextVideoFrame = false;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    if (firstVideoFrame.isValid() && !loopRestartFramePending)
+        showHeldVideoFrame(firstVideoFrame);
+    loopRestartFramePending = firstVideoFrame.isValid();
+#endif
     player.setPosition(0);
     player.play();
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
@@ -570,15 +617,7 @@ void QVVideoView::mediaStatusChanged(QMediaPlayer::MediaStatus status)
     }
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     if (status == QMediaPlayer::EndOfMedia && lastVideoFrame.isValid()) {
-        const QImage finalImage = lastVideoFrame.toImage();
-        if (!finalImage.isNull()) {
-            endFrameItem->setPixmap(QPixmap::fromImage(finalImage));
-            const QSizeF videoSize = videoItem->size();
-            endFrameItem->setTransform(QTransform::fromScale(
-                    videoSize.width() / finalImage.width(),
-                    videoSize.height() / finalImage.height()));
-            endFrameItem->show();
-        }
+        showHeldVideoFrame(lastVideoFrame);
     }
 #endif
     const bool isNowLoaded = status == QMediaPlayer::LoadedMedia

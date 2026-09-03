@@ -65,6 +65,7 @@ private:
     void startAudioPlayback();
     void trySynchronizeAudioPlayback();
     void fadeInAudio();
+    void showHeldVideoFrame(const QVideoFrame &frame);
 #endif
     void setSynchronizedPosition(qint64 position);
     void restartPlayback();
@@ -76,6 +77,7 @@ private:
     QVideoSink *audioPlayerVideoSink = nullptr;
     QVariantAnimation *audioFadeAnimation = nullptr;
     QGraphicsPixmapItem *endFrameItem = nullptr;
+    QVideoFrame firstVideoFrame;
     QVideoFrame lastVideoFrame;
 #endif
     QGraphicsVideoItem *videoItem;
@@ -94,6 +96,7 @@ private:
     quint64 audioSyncGeneration = 0;
     bool audioSynchronizationPending = false;
     bool audioSyncAttemptScheduled = false;
+    bool loopRestartFramePending = false;
 #endif
     bool videoLoaded = false;
 };
