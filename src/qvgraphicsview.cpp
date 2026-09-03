@@ -46,6 +46,8 @@ QVGraphicsView::QVGraphicsView(QWidget *parent) : QGraphicsView(parent)
     videoView = nullptr;
     mediaRequestGeneration = 0;
     videoCanvasActive = false;
+    loadingNeighbor = false;
+    restoreCenterAfterExpensiveScale = false;
     loopMode = QVPlaybackLoopMode::Default;
 
     zoomBasisScaleFactor = 1.0;
@@ -60,7 +62,15 @@ QVGraphicsView::QVGraphicsView(QWidget *parent) : QGraphicsView(parent)
     expensiveScaleTimerNew = new QTimer(this);
     expensiveScaleTimerNew->setSingleShot(true);
     expensiveScaleTimerNew->setInterval(50);
-    connect(expensiveScaleTimerNew, &QTimer::timeout, this, [this] { scaleExpensively(); });
+    connect(expensiveScaleTimerNew, &QTimer::timeout, this, [this] {
+        if (restoreCenterAfterExpensiveScale)
+            expensiveScaleCenter = normalizedCanvasCenter() + canvasCenterRoundingError;
+        scaleExpensively();
+        if (restoreCenterAfterExpensiveScale) {
+            centerOnNormalizedCanvasPoint(expensiveScaleCenter);
+            restoreCenterAfterExpensiveScale = false;
+        }
+    });
 
     loadedPixmapItem = new QGraphicsPixmapItem();
     scene->addItem(loadedPixmapItem);
@@ -372,6 +382,9 @@ void QVGraphicsView::loadMimeData(const QMimeData *mimeData)
 
 void QVGraphicsView::loadFile(const QString &fileName)
 {
+    if (!loadingNeighbor)
+        navigationCanvasState.valid = false;
+
     const quint64 requestGeneration = ++mediaRequestGeneration;
     QString sanitaryFileName = fileName;
     const QUrl url(fileName);
@@ -393,6 +406,7 @@ void QVGraphicsView::loadFile(const QString &fileName)
     if (mediaType == QVMediaCatalog::MediaType::Video) {
         resetCanvasForNewMedia();
         videoNativeSize = QSize();
+        videoLayoutSize = QSize();
         activateVideoCanvas();
         imageCore.activateExternalMedia(sanitaryFileName, mediaType);
         // Let the already-visible window paint before the multimedia backend is
@@ -407,8 +421,10 @@ void QVGraphicsView::loadFile(const QString &fileName)
             }
         });
     } else {
-        if (imageCore.isLoadInProgress())
+        if (imageCore.isLoadInProgress()) {
+            navigationCanvasState.valid = false;
             return;
+        }
         const bool wasVideoCanvasActive = videoCanvasActive;
         closeVideo();
         if (wasVideoCanvasActive)
@@ -446,6 +462,9 @@ void QVGraphicsView::zoomOut(const QPoint &pos)
 
 void QVGraphicsView::zoom(qreal scaleFactor, const QPoint &pos)
 {
+    restoreCenterAfterExpensiveScale = false;
+    canvasCenterRoundingError = QPointF();
+
     // don't zoom too far out, dude
     currentScale *= scaleFactor;
     if (currentScale >= 500 || currentScale <= 0.01) {
@@ -606,13 +625,18 @@ void QVGraphicsView::updateLoadedPixmapItem()
     loadedPixmapItem->setPixmap(getLoadedPixmap());
     scaledSize = loadedPixmapItem->boundingRect().size().toSize();
 
-    resetScale();
-
+    // Window sizing can synchronously reset the view via resizeEvent. Restore
+    // navigation framing only after that sizing has completed.
     emit updatedLoadedPixmapItem();
+    if (!restoreCanvasStateForLoadedMedia())
+        resetScale();
 }
 
 void QVGraphicsView::resetScale()
 {
+    restoreCenterAfterExpensiveScale = false;
+    canvasCenterRoundingError = QPointF();
+
     if (!hasActiveCanvasItem())
         return;
 
@@ -624,6 +648,8 @@ void QVGraphicsView::resetScale()
 
 void QVGraphicsView::originalSize()
 {
+    restoreCenterAfterExpensiveScale = false;
+    canvasCenterRoundingError = QPointF();
     if (isOriginalSize) {
         // If we are at the actual original size
         if (transform() == QTransform()) {
@@ -645,6 +671,11 @@ void QVGraphicsView::originalSize()
 
 void QVGraphicsView::goToFile(const GoToFileMode &mode, int index)
 {
+    // The image decoder accepts only one request at a time. Ignored key repeats
+    // must not overwrite or discard the snapshot belonging to that request.
+    if (imageCore.isLoadInProgress())
+        return;
+
     bool shouldRetryFolderInfoUpdate = false;
 
     // Update folder info only after a little idle time as an optimization for when
@@ -729,7 +760,14 @@ void QVGraphicsView::goToFile(const GoToFileMode &mode, int index)
         imageCore.updateFolderInfo(QFileInfo(nextImageFilePath).path());
     }
 
+    if (mode == GoToFileMode::previous || mode == GoToFileMode::next)
+        saveCanvasStateForNeighborNavigation();
+    else
+        navigationCanvasState.valid = false;
+
+    loadingNeighbor = true;
     loadFile(nextImageFilePath);
+    loadingNeighbor = false;
 }
 
 void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
@@ -881,21 +919,14 @@ void QVGraphicsView::ensureVideoView()
         if (size.isEmpty())
             return;
 
-        videoNativeSize = size.toSize();
-        if (!videoCanvasActive)
-            return;
-
-        resetScale();
-        emit updatedLoadedPixmapItem();
+        updateVideoCanvasSize(size.toSize());
     });
     connect(videoView, &QVVideoView::videoLoadedChanged, this, [this]() {
         if (videoCanvasActive && videoView->isLoaded()) {
             const QSize reportedSize = videoView->graphicsItem()->nativeSize().toSize();
             if (!reportedSize.isEmpty()) {
-                videoNativeSize = reportedSize;
                 videoView->graphicsItem()->setSize(reportedSize);
-                resetScale();
-                emit updatedLoadedPixmapItem();
+                updateVideoCanvasSize(reportedSize);
             }
         }
         emit fileChanged();
@@ -936,6 +967,8 @@ void QVGraphicsView::resetCanvasForNewMedia()
     absoluteTransform = QTransform();
     zoomBasis = QTransform();
     zoomBasisScaleFactor = 1.0;
+    restoreCenterAfterExpensiveScale = false;
+    canvasCenterRoundingError = QPointF();
 
     if (videoView) {
         QGraphicsVideoItem *item = videoView->graphicsItem();
@@ -944,6 +977,115 @@ void QVGraphicsView::resetCanvasForNewMedia()
         item->setTransform(QTransform());
         item->setTransformOriginPoint(QPointF());
     }
+}
+
+void QVGraphicsView::saveCanvasStateForNeighborNavigation()
+{
+    // Video dimensions arrive asynchronously. Keep the last visible framing
+    // when another navigation supersedes a video that has not finished loading.
+    if (navigationCanvasState.valid)
+        return;
+
+    navigationCanvasState.valid = hasActiveCanvasItem() && !currentMediaSize().isEmpty();
+    if (!navigationCanvasState.valid)
+        return;
+
+    navigationCanvasState.mediaSize = currentMediaSize();
+    navigationCanvasState.normalizedCenter = normalizedCanvasCenter() + canvasCenterRoundingError;
+    navigationCanvasState.viewportWidthRatio =
+            absoluteTransform.mapRect(QRectF(QPointF(), currentMediaSize())).width()
+            / viewport()->width();
+    navigationCanvasState.originalSize = isOriginalSize;
+}
+
+bool QVGraphicsView::restoreCanvasStateForLoadedMedia()
+{
+    if (!navigationCanvasState.valid)
+        return false;
+
+    if (currentMediaSize().isEmpty()) {
+        navigationCanvasState.valid = false;
+        return false;
+    }
+
+    const NavigationCanvasState savedState = navigationCanvasState;
+    navigationCanvasState.valid = false;
+    const QSize newSize = currentMediaSize();
+    // Exact rational equality, without floating-point aspect-ratio tolerances.
+    if (qint64(savedState.mediaSize.width()) * newSize.height()
+        != qint64(newSize.width()) * savedState.mediaSize.height())
+        return false;
+
+    resetScale();
+    if (savedState.originalSize && savedState.mediaSize == newSize) {
+        expensiveScaleTimerNew->stop();
+        originalSize();
+    } else {
+        // Preserve the fraction of media visible, including when fit-to-view
+        // stops at native size for one resolution but not the other.
+        const qreal fittedWidth =
+                absoluteTransform.mapRect(QRectF(QPointF(), currentMediaSize())).width();
+        const qreal factor = savedState.viewportWidthRatio * viewport()->width() / fittedWidth;
+        if (!qFuzzyCompare(factor, qreal(1.0)))
+            zoom(factor);
+    }
+
+    centerOnNormalizedCanvasPoint(savedState.normalizedCenter);
+    if (!videoCanvasActive && expensiveScaleTimerNew->isActive()) {
+        expensiveScaleCenter = savedState.normalizedCenter;
+        restoreCenterAfterExpensiveScale = true;
+    }
+    return true;
+}
+
+QPointF QVGraphicsView::normalizedCanvasCenter() const
+{
+    const QGraphicsItem *item = activeCanvasItem();
+    const QRectF bounds = item->boundingRect();
+    const QPointF itemCenter = item->mapFromScene(
+            viewportTransform().inverted().map(canvasViewportCenter()));
+    return QPointF((itemCenter.x() - bounds.left()) / bounds.width(),
+                   (itemCenter.y() - bounds.top()) / bounds.height());
+}
+
+QPointF QVGraphicsView::canvasViewportCenter() const
+{
+    qreal obscuredHeight = 0;
+#ifdef COCOA_LOADED
+    obscuredHeight = QVCocoaFunctions::getObscuredHeight(window()->windowHandle());
+#endif
+    return QPointF(viewport()->width() / 2.0, (viewport()->height() + obscuredHeight) / 2.0);
+}
+
+void QVGraphicsView::centerOnNormalizedCanvasPoint(const QPointF &normalizedPoint)
+{
+    if (!hasActiveCanvasItem())
+        return;
+
+    QGraphicsItem *item = activeCanvasItem();
+    const QRectF bounds = item->boundingRect();
+    const QPointF itemPoint(bounds.left() + normalizedPoint.x() * bounds.width(),
+                            bounds.top() + normalizedPoint.y() * bounds.height());
+    const QPointF delta = viewportTransform().map(item->mapToScene(itemPoint))
+            - canvasViewportCenter();
+    horizontalScrollBar()->setValue(horizontalScrollBar()->value()
+                                     + qRound(delta.x()) * (isRightToLeft() ? -1 : 1));
+    verticalScrollBar()->setValue(verticalScrollBar()->value() + qRound(delta.y()));
+    // Scroll bars store integers. Retain the subpixel remainder instead of
+    // feeding the rounded position back into the next navigation snapshot.
+    canvasCenterRoundingError = normalizedPoint - normalizedCanvasCenter();
+}
+
+void QVGraphicsView::updateVideoCanvasSize(const QSize &size)
+{
+    videoNativeSize = size;
+    if (!videoCanvasActive || videoLayoutSize == size)
+        return;
+
+    videoLayoutSize = size;
+    emit updatedLoadedPixmapItem();
+    if (!restoreCanvasStateForLoadedMedia())
+        resetScale();
 }
 
 bool QVGraphicsView::hasActiveCanvasItem() const
@@ -998,6 +1140,7 @@ void QVGraphicsView::closeVideo()
     videoView->closeVideo();
     videoView->graphicsItem()->hide();
     videoNativeSize = QSize();
+    videoLayoutSize = QSize();
 }
 
 void QVGraphicsView::toggleVideoPaused()
@@ -1009,6 +1152,8 @@ void QVGraphicsView::toggleVideoPaused()
 void QVGraphicsView::closeImage()
 {
     ++mediaRequestGeneration;
+    navigationCanvasState.valid = false;
+    restoreCenterAfterExpensiveScale = false;
     closeVideo();
     activateImageCanvas();
     imageCore.closeImage();

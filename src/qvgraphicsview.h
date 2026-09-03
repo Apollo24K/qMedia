@@ -134,10 +134,25 @@ private slots:
     void updateLoadedPixmapItem();
 
 private:
+    struct NavigationCanvasState
+    {
+        bool valid = false;
+        QSize mediaSize;
+        QPointF normalizedCenter;
+        qreal viewportWidthRatio = 1.0;
+        bool originalSize = false;
+    };
+
     void updateFilteringMode();
     void activateImageCanvas();
     void activateVideoCanvas();
     void resetCanvasForNewMedia();
+    void saveCanvasStateForNeighborNavigation();
+    bool restoreCanvasStateForLoadedMedia();
+    QPointF normalizedCanvasCenter() const;
+    QPointF canvasViewportCenter() const;
+    void centerOnNormalizedCanvasPoint(const QPointF &normalizedPoint);
+    void updateVideoCanvasSize(const QSize &size);
     void ensureVideoView();
     bool hasActiveCanvasItem() const;
     QGraphicsItem *activeCanvasItem() const;
@@ -145,8 +160,14 @@ private:
     QGraphicsPixmapItem *loadedPixmapItem;
     QVVideoView *videoView;
     QSize videoNativeSize;
+    QSize videoLayoutSize;
     quint64 mediaRequestGeneration;
     bool videoCanvasActive;
+    bool loadingNeighbor;
+    bool restoreCenterAfterExpensiveScale;
+    QPointF expensiveScaleCenter;
+    QPointF canvasCenterRoundingError;
+    NavigationCanvasState navigationCanvasState;
     QVPlaybackLoopMode loopMode;
 
     constexpr static int MARGIN = -2;
