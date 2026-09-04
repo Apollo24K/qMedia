@@ -5,6 +5,7 @@
 #include <QElapsedTimer>
 #include <QObject>
 #include <QSizeF>
+#include <QImage>
 
 #include "qvplaybackloopmode.h"
 
@@ -46,6 +47,9 @@ public:
     bool isLoaded() const { return videoLoaded; }
     bool isPlaying() const;
     bool isMuted() const;
+    QImage exportFrame() const;
+    qint64 exportPosition() const { return player.position(); }
+    qint64 duration() const { return player.duration(); }
     int playbackSpeed() const { return playbackSpeedPercent; }
     QString errorString() const { return player.errorString(); }
     QGraphicsVideoItem *graphicsItem() const { return videoItem; }

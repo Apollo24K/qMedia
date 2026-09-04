@@ -62,6 +62,8 @@ set(PROJECT_SOURCES
     src/qvmediacatalog.cpp
     src/qvmediaformats.cpp
     src/qvclipboard.cpp
+    src/qvexport.cpp
+    src/qvexportdialog.cpp
     src/qvvideoview.cpp
     src/qvshortcutdialog.cpp
     src/actionmanager.cpp
@@ -83,6 +85,8 @@ set(PROJECT_HEADERS
     src/qvimagecore.h
     src/qvmediacatalog.h
     src/qvmediaformats.h
+    src/qvexport.h
+    src/qvexportdialog.h
     src/qvplaybackloopmode.h
     src/qvvideoview.h
     src/qvshortcutdialog.h

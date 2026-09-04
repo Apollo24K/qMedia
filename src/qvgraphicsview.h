@@ -3,6 +3,7 @@
 
 #include "qvimagecore.h"
 #include "qvplaybackloopmode.h"
+#include "qvexport.h"
 #include <QGraphicsView>
 #include <QImageReader>
 #include <QMimeData>
@@ -63,6 +64,7 @@ public:
     bool isMediaLoaded() const;
     QString videoErrorString() const;
     QSize currentMediaSize() const;
+    QVExport::Source exportSource() const;
     void reloadVideo();
     void closeVideo();
     void toggleVideoPaused();

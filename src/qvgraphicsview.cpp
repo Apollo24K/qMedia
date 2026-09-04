@@ -16,6 +16,44 @@
 #include <QScrollBar>
 #include <QElapsedTimer>
 
+QVExport::Source QVGraphicsView::exportSource() const
+{
+    QVExport::Source source;
+    source.path = getCurrentMedia().fileInfo.absoluteFilePath();
+    source.video = videoCanvasActive;
+    source.animated = !source.video && getImageDetails().isMovieLoaded;
+    source.size = source.video ? videoNativeSize : getImageDetails().baseImageSize;
+    if (source.video && videoView) {
+        source.frame = videoView->exportFrame();
+        source.positionMs = videoView->exportPosition();
+        source.durationMs = videoView->duration();
+        source.speed = videoView->playbackSpeed() / 100.0;
+        if (!source.frame.isNull())
+            source.size = source.frame.size();
+    } else if (source.animated) {
+        source.frameNumber = qMax(0, getLoadedMovie().currentFrameNumber());
+        source.animationFormat = getLoadedMovie().format();
+    } else if (source.path.isEmpty()) {
+        source.frame = getLoadedPixmap().toImage();
+        source.size = source.frame.size();
+    }
+    if (!source.video && !source.path.isEmpty()) {
+        QImageReader reader(source.path);
+        if (reader.transformation() & QImageIOHandler::TransformationRotate90)
+            source.size.transpose();
+    }
+    source.rotation = source.video && activeCanvasItem()
+            ? (qRound(activeCanvasItem()->rotation()) % 360 + 360) % 360
+            : (imageCore.getCurrentRotation() % 360 + 360) % 360;
+    source.mirrored = transform().m11() < 0;
+    source.flipped = transform().m22() < 0;
+    source.loop = loopMode == QVPlaybackLoopMode::ForceLoop
+            || (loopMode == QVPlaybackLoopMode::Default && !source.video
+                && imageCore.currentAnimationLoopsByDefault());
+    source.muted = source.video && isVideoMuted();
+    return source;
+}
+
 QVGraphicsView::QVGraphicsView(QWidget *parent) : QGraphicsView(parent)
 {
     // GraphicsView setup

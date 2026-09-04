@@ -186,6 +186,17 @@ QVVideoView::QVVideoView(QGraphicsScene *scene, QObject *parent)
     connect(&player, &QMediaPlayer::mediaStatusChanged, this, &QVVideoView::mediaStatusChanged);
 }
 
+QImage QVVideoView::exportFrame() const
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    if (endFrameItem->isVisible())
+        return endFrameItem->pixmap().toImage();
+    return lastVideoFrame.toImage();
+#else
+    return QImage();
+#endif
+}
+
 void QVVideoView::recordInitializationDuration(qint64 milliseconds)
 {
     QString backend = QString::fromLocal8Bit(qgetenv("QT_MEDIA_BACKEND"));

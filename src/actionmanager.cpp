@@ -782,8 +782,8 @@ void ActionManager::initializeActionLibrary()
     actionLibrary.insert("lastfile", lastFileAction);
 
     auto *saveFrameAsAction =
-            new QAction(QIcon::fromTheme("document-save-as"), tr("Save Frame &As..."));
-    saveFrameAsAction->setData({ "gifdisable" });
+            new QAction(QIcon::fromTheme("document-save-as"), tr("&Export..."));
+    saveFrameAsAction->setData({ "mediadisable" });
     actionLibrary.insert("saveframeas", saveFrameAsAction);
 
     auto *pauseAction = new QAction(QIcon::fromTheme("media-playback-pause"), tr("Pa&use"));

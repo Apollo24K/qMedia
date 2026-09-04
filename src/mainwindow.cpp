@@ -4,6 +4,7 @@
 #include "qvcocoafunctions.h"
 #include "qvrenamedialog.h"
 #include "qvclipboard.h"
+#include "qvexportdialog.h"
 
 #include <QFileDialog>
 #include <QMessageBox>
@@ -1127,31 +1128,17 @@ void MainWindow::lastFile()
 
 void MainWindow::saveFrameAs()
 {
-    QSettings settings;
-    settings.beginGroup("recents");
-    if (!getImageDetails().isMovieLoaded)
+    if (!graphicsView->isMediaLoaded())
         return;
-
-    if (graphicsView->getLoadedMovie().state() == QMovie::Running) {
+    cancelSlideshow();
+    if (graphicsView->isVideoPlaying()
+        || (getImageDetails().isMovieLoaded
+            && graphicsView->getLoadedMovie().state() == QMovie::Running)) {
         pause();
     }
-    QFileDialog *saveDialog = new QFileDialog(this, tr("Save Frame As..."));
-    saveDialog->setDirectory(settings.value("lastFileDialogDir", QDir::homePath()).toString());
-    saveDialog->setNameFilters(qvApp->getNameFilterList());
-    saveDialog->selectFile(getCurrentMedia().fileInfo.baseName() + "-"
-                           + QString::number(graphicsView->getLoadedMovie().currentFrameNumber())
-                           + ".png");
-    saveDialog->setDefaultSuffix("png");
-    saveDialog->setAcceptMode(QFileDialog::AcceptSave);
-    saveDialog->open();
-    connect(saveDialog, &QFileDialog::fileSelected, this, [=](const QString &fileName) {
-        graphicsView->originalSize();
-        for (int i = 0; i < graphicsView->getLoadedMovie().frameCount(); i++)
-            nextFrame();
-
-        graphicsView->getLoadedMovie().currentPixmap().save(fileName, nullptr, 100);
-        graphicsView->resetScale();
-    });
+    auto *dialog = new QVExportDialog(graphicsView->exportSource(), this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->open();
 }
 
 void MainWindow::pause()
