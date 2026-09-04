@@ -123,6 +123,8 @@ public:
 
     void toggleFullScreen();
 
+    void toggleBackgroundColor();
+
     int getTitlebarOverlap() const;
 
     const QVMediaCatalog::State &getCurrentMedia() const { return graphicsView->getCurrentMedia(); }
@@ -180,6 +182,8 @@ private:
     QVInfoDialog *info;
 
     QColor customBackgroundColor;
+    QColor alternateBackgroundColor;
+    bool alternateBackgroundEnabled = false;
 
     bool justLaunchedWithImage;
 

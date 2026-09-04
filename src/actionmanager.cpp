@@ -258,6 +258,7 @@ QMenu *ActionManager::buildViewMenu(bool addIcon, QWidget *parent)
     addCloneOfAction(viewMenu, "flip");
     viewMenu->addSeparator();
     addCloneOfAction(viewMenu, "fullscreen");
+    addCloneOfAction(viewMenu, "togglewhitebackground");
 
     menuCloneLibrary.insert(viewMenu->menuAction()->data().toString(), viewMenu);
     return viewMenu;
@@ -606,6 +607,8 @@ void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *releva
         relevantWindow->flip();
     } else if (key == "fullscreen") {
         relevantWindow->toggleFullScreen();
+    } else if (key == "togglewhitebackground") {
+        relevantWindow->toggleBackgroundColor();
     } else if (key == "firstfile") {
         relevantWindow->firstFile();
     } else if (key == "previousfile") {
@@ -764,6 +767,9 @@ void ActionManager::initializeActionLibrary()
     fullScreenAction->setMenuRole(QAction::NoRole);
     fullScreenAction->setData({ "windowdisable" });
     actionLibrary.insert("fullscreen", fullScreenAction);
+
+    auto *backgroundColorAction = new QAction(tr("Toggle &Background Color"));
+    actionLibrary.insert("togglewhitebackground", backgroundColorAction);
 
     auto *firstFileAction = new QAction(QIcon::fromTheme("go-first"), tr("&First File"));
     firstFileAction->setData({ "folderdisable" });

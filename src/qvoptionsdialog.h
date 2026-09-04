@@ -9,6 +9,7 @@
 #include <QRadioButton>
 #include <QComboBox>
 #include <QSpinBox>
+#include <QPushButton>
 
 namespace Ui {
 class QVOptionsDialog;
@@ -44,8 +45,8 @@ protected:
     void syncShortcuts(bool defaults = false);
     void updateShortcutsTable();
     void updateButtonBox();
-    void bgColorButtonClicked();
-    void updateBgColorButton();
+    void bgColorButtonClicked(QPushButton *button, const QString &key);
+    void updateBgColorButton(QPushButton *button);
     void populateCategories(int selectedRow);
     void populateLanguages();
 

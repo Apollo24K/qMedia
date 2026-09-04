@@ -153,6 +153,10 @@ void ShortcutManager::initializeShortcutsList()
         shortcutsList.last().defaultShortcuts << QKeySequence(Qt::Key_F11).toString();
     }
 #endif
+    shortcutsList.append({ tr("Toggle Background Color"),
+                           "togglewhitebackground",
+                           QStringList(QKeySequence(Qt::Key_W).toString()),
+                           {} });
     shortcutsList.append({ tr("Save Frame As"),
                            "saveframeas",
                            keyBindingsToStringList(QKeySequence::Save),

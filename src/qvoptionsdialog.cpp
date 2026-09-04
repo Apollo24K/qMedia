@@ -180,8 +180,16 @@ void QVOptionsDialog::syncSettings(bool defaults, bool makeConnections)
     // bgcolor
     ui->bgColorButton->setText(settingsManager.getString("bgcolor", defaults));
     transientSettings.insert("bgcolor", ui->bgColorButton->text());
-    updateBgColorButton();
-    connect(ui->bgColorButton, &QPushButton::clicked, this, &QVOptionsDialog::bgColorButtonClicked);
+    updateBgColorButton(ui->bgColorButton);
+    ui->alternateBgColorButton->setText(settingsManager.getString("alternatebgcolor", defaults));
+    transientSettings.insert("alternatebgcolor", ui->alternateBgColorButton->text());
+    updateBgColorButton(ui->alternateBgColorButton);
+    if (makeConnections) {
+        connect(ui->bgColorButton, &QPushButton::clicked, this,
+                [this] { bgColorButtonClicked(ui->bgColorButton, "bgcolor"); });
+        connect(ui->alternateBgColorButton, &QPushButton::clicked, this,
+                [this] { bgColorButtonClicked(ui->alternateBgColorButton, "alternatebgcolor"); });
+    }
     // titlebarmode
     syncRadioButtons({ ui->titlebarRadioButton0, ui->titlebarRadioButton1, ui->titlebarRadioButton2,
                        ui->titlebarRadioButton3 },
@@ -447,30 +455,29 @@ void QVOptionsDialog::updateButtonBox()
     }
 }
 
-void QVOptionsDialog::bgColorButtonClicked()
+void QVOptionsDialog::bgColorButtonClicked(QPushButton *button, const QString &key)
 {
-
-    auto *colorDialog = new QColorDialog(ui->bgColorButton->text(), this);
+    auto *colorDialog = new QColorDialog(button->text(), this);
+    colorDialog->setAttribute(Qt::WA_DeleteOnClose);
     colorDialog->setWindowModality(Qt::WindowModal);
-    connect(colorDialog, &QDialog::accepted, colorDialog, [this, colorDialog] {
+    connect(colorDialog, &QDialog::accepted, colorDialog, [this, colorDialog, button, key] {
         auto selectedColor = colorDialog->currentColor();
 
         if (!selectedColor.isValid())
             return;
 
-        modifySetting("bgcolor", selectedColor.name());
-        ui->bgColorButton->setText(selectedColor.name());
-        updateBgColorButton();
-        colorDialog->deleteLater();
+        modifySetting(key, selectedColor.name());
+        button->setText(selectedColor.name());
+        updateBgColorButton(button);
     });
     colorDialog->open();
 }
 
-void QVOptionsDialog::updateBgColorButton()
+void QVOptionsDialog::updateBgColorButton(QPushButton *button)
 {
     QPixmap newPixmap = QPixmap(32, 32);
-    newPixmap.fill(ui->bgColorButton->text());
-    ui->bgColorButton->setIcon(QIcon(newPixmap));
+    newPixmap.fill(button->text());
+    button->setIcon(QIcon(newPixmap));
 }
 
 void QVOptionsDialog::bgColorCheckboxStateChanged(int arg1)
@@ -480,7 +487,7 @@ void QVOptionsDialog::bgColorCheckboxStateChanged(int arg1)
     else
         ui->bgColorButton->setEnabled(false);
 
-    updateBgColorButton();
+    updateBgColorButton(ui->bgColorButton);
 }
 
 void QVOptionsDialog::scalingCheckboxStateChanged(int arg1)

@@ -22,6 +22,7 @@ static const SettingDefinition settingDefinitions[] = {
     // Window settings
     { SettingsManager::Setting::BgColorEnabled, true, "bgcolorenabled" },
     { SettingsManager::Setting::BgColor, "#212121", "bgcolor" },
+    { SettingsManager::Setting::AlternateBgColor, "#ffffff", "alternatebgcolor" },
     { SettingsManager::Setting::TitleBarMode, 1, "titlebarmode" },
     { SettingsManager::Setting::WindowResizeMode, 1, "windowresizemode" },
     { SettingsManager::Setting::MinWindowResizedPercentage, 20, "minwindowresizedpercentage" },

@@ -278,8 +278,9 @@ void MainWindow::paintEvent(QPaintEvent *event)
 
     QPainter painter(this);
 
-    const QColor &backgroundColor =
-            customBackgroundColor.isValid() ? customBackgroundColor : painter.background().color();
+    const QColor backgroundColor = alternateBackgroundEnabled ? alternateBackgroundColor
+            : customBackgroundColor.isValid() ? customBackgroundColor
+                                              : painter.background().color();
 
     // Find the top of the viewport to account for the menu bar if it's inside the window
     // and/or the label that displays titlebar text in full screen mode.
@@ -316,6 +317,13 @@ void MainWindow::paintEvent(QPaintEvent *event)
     QMainWindow::paintEvent(event);
 }
 
+void MainWindow::toggleBackgroundColor()
+{
+    // Keep the override local to this window; never change the saved background preference.
+    alternateBackgroundEnabled = !alternateBackgroundEnabled;
+    update();
+}
+
 void MainWindow::fullscreenChanged()
 {
     const bool isFullscreen = windowState().testFlag(Qt::WindowFullScreen);
@@ -348,6 +356,8 @@ void MainWindow::settingsUpdated()
     customBackgroundColor = settingsManager.getBool(SettingsManager::Setting::BgColorEnabled)
             ? QColor(settingsManager.getString(SettingsManager::Setting::BgColor))
             : QColor();
+    alternateBackgroundColor =
+            QColor(settingsManager.getString(SettingsManager::Setting::AlternateBgColor));
 
     // menubarenabled
     bool menuBarEnabled = settingsManager.getBool(SettingsManager::Setting::MenuBarEnabled);
