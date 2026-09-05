@@ -27,6 +27,8 @@
 #include <QStackedWidget>
 #include <QUrl>
 #include <QPainter>
+#include <QApplication>
+#include <QEvent>
 
 QVExportDialog::QVExportDialog(const QVExport::Source &source, QWidget *parent)
     : QDialog(parent), source(source)
@@ -331,10 +333,12 @@ QVExportDialog::QVExportDialog(const QVExport::Source &source, QWidget *parent)
                              runningWholePreview ? result.durationMs : -1);
     });
     updateFormats();
+    qApp->installEventFilter(this);
 }
 
 QVExportDialog::~QVExportDialog()
 {
+    qApp->removeEventFilter(this);
     if (cancellation)
         cancellation->store(true);
     if (previewCancellation) previewCancellation->store(true);
@@ -343,6 +347,26 @@ QVExportDialog::~QVExportDialog()
     previewPlayer = nullptr;
     previewWatcher.waitForFinished();
     watcher.waitForFinished();
+}
+
+void QVExportDialog::showEvent(QShowEvent *event)
+{
+    QDialog::showEvent(event);
+    scope->setFocus(Qt::OtherFocusReason);
+    fileName->deselect();
+}
+
+bool QVExportDialog::eventFilter(QObject *watched, QEvent *event)
+{
+    if (event->type() == QEvent::MouseButtonPress) {
+        auto *widget = qobject_cast<QWidget *>(watched);
+        if (widget && (widget == this || isAncestorOf(widget))
+            && widget != fileName && !fileName->isAncestorOf(widget)) {
+            fileName->deselect();
+            if (fileName->hasFocus()) fileName->clearFocus();
+        }
+    }
+    return QDialog::eventFilter(watched, event);
 }
 
 void QVExportDialog::reject()
@@ -590,13 +614,7 @@ void QVExportDialog::applyPercentage()
 
 QString QVExportDialog::exportFileName() const
 {
-    QString name = fileName->text().trimmed();
-    const QString suffix = QFileInfo(name).suffix().toLower();
-    QStringList known = QVExport::imageFormats();
-    known << "jpg" << "tif" << "gif" << "mp4" << "webm";
-    if ((!previousSuffix.isEmpty() && suffix == previousSuffix) || known.contains(suffix))
-        name.chop(suffix.size() + 1);
-    return name + "." + format->currentData().toString();
+    return fileName->text().trimmed() + "." + format->currentData().toString();
 }
 
 void QVExportDialog::updateFileName()
@@ -604,13 +622,10 @@ void QVExportDialog::updateFileName()
     const bool edited = fileName->isModified();
     if (!edited) {
         const QString base = QFileInfo(source.path).completeBaseName();
-        fileName->setText((base.isEmpty() ? tr("Untitled") : base)
-                + (scope->currentIndex() == 1 || (!source.video && !source.animated) ? "-export." : "-frame.")
-                + format->currentData().toString());
-    } else {
-        fileName->setText(exportFileName());
+        const QString suggested = (base.isEmpty() ? tr("Untitled") : base)
+                + (scope->currentIndex() == 1 || (!source.video && !source.animated) ? "-export" : "-frame");
+        if (fileName->text() != suggested) fileName->setText(suggested);
     }
-    previousSuffix = format->currentData().toString();
     fileName->setModified(edited);
 }
 

@@ -56,8 +56,17 @@ void ActionManagerTests::testExportDialog()
     QCOMPARE(scope->currentIndex(), 0);
     QCOMPARE(format->currentData().toString(), QString("png"));
     auto *name = dialog.findChild<QLineEdit *>("exportFileName");
-    QCOMPARE(name->text(), QString("example-frame.png"));
-    name->setText("My edited name.png");
+    QCOMPARE(name->text(), QString("example-frame"));
+    dialog.show();
+    QVERIFY(!name->hasFocus());
+    QVERIFY(!name->hasSelectedText());
+    name->setFocus();
+    name->selectAll();
+    QVERIFY(name->hasSelectedText());
+    QTest::mouseClick(dialog.findChild<QLabel *>("exportPreview"), Qt::LeftButton);
+    QVERIFY(!name->hasSelectedText());
+    QVERIFY(!name->hasFocus());
+    name->setText("My edited name.v2");
     name->setModified(true);
     auto *mode = dialog.findChild<QComboBox *>("exportSizeMode");
     auto *percent = dialog.findChild<QDoubleSpinBox *>("exportPercentage");
@@ -76,7 +85,7 @@ void ActionManagerTests::testExportDialog()
     QCOMPARE(width->value(), 80);
     scope->setCurrentIndex(1);
     QCOMPARE(format->currentData().toString(), QString("gif"));
-    QCOMPARE(name->text(), QString("My edited name.gif"));
+    QCOMPARE(name->text(), QString("My edited name.v2"));
     QVERIFY(format->findData("mp4") >= 0);
     scope->setCurrentIndex(0);
     QVERIFY(format->findData("mp4") < 0);

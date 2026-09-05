@@ -27,6 +27,8 @@ public:
     ~QVExportDialog() override;
 protected:
     void reject() override;
+    void showEvent(QShowEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 private:
     void updateFormats();
     void updateControls();
@@ -43,7 +45,6 @@ private:
     void updateFileName();
     QVExport::Source source;
     QLineEdit *fileName;
-    QString previousSuffix;
     QComboBox *sizeMode;
     QDoubleSpinBox *percentage;
     QDoubleSpinBox *speed;
