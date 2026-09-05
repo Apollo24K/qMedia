@@ -20,6 +20,8 @@
 #include <QApplication>
 #include <QSlider>
 #include <QWheelEvent>
+#include <QGroupBox>
+#include <QShortcut>
 
 class ActionManagerTests : public QObject
 {
@@ -39,6 +41,8 @@ private slots:
     void testExportDialog();
     void testExportCanvasState();
     void testFiltersDialogWheelStep();
+    void testFilterLayers();
+    void testDialogToggleShortcuts();
 };
 
 ActionManagerTests::ActionManagerTests() { }
@@ -56,6 +60,64 @@ void ActionManagerTests::testFiltersDialogWheelStep()
                       Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
     QApplication::sendEvent(brightness, &wheel);
     QCOMPARE(brightness->value(), 1);
+    dialog.show();
+    auto *toggle = dialog.findChild<QShortcut *>("filtersToggleShortcut");
+    QVERIFY(toggle);
+    QCOMPARE(toggle->key(), QKeySequence(Qt::Key_U));
+    QVERIFY(QMetaObject::invokeMethod(toggle, "activated"));
+    QVERIFY(!dialog.isVisible());
+}
+
+void ActionManagerTests::testFilterLayers()
+{
+    QVFilters::Settings filters;
+    QVFiltersDialog dialog(filters);
+    auto *layers = dialog.findChild<QComboBox *>("filterLayerSelector");
+    auto *add = dialog.findChild<QPushButton *>("filterAddLayer");
+    auto *remove = dialog.findChild<QPushButton *>("filterRemoveLayer");
+    auto *hue = dialog.findChild<QSlider *>("hueSlider");
+    auto *transparency = dialog.findChild<QSlider *>("transparencySlider");
+    auto *gradient = dialog.findChild<QGroupBox *>("filterGradientGroup");
+    QVERIFY(layers && add && remove && hue && transparency && gradient);
+    QCOMPARE(layers->count(), 1);
+    QVERIFY(!remove->isEnabled());
+    add->click();
+    QCOMPARE(layers->count(), 2);
+    QCOMPARE(layers->currentIndex(), 1);
+    QVERIFY(remove->isEnabled());
+    hue->setValue(90);
+    transparency->setValue(60);
+    gradient->setChecked(true);
+    layers->setCurrentIndex(0);
+    QCOMPARE(hue->value(), 0);
+    QCOMPARE(transparency->value(), 0);
+    QVERIFY(!gradient->isChecked());
+    layers->setCurrentIndex(1);
+    QCOMPARE(hue->value(), 90);
+    QCOMPARE(transparency->value(), 60);
+    QVERIFY(gradient->isChecked());
+    remove->click();
+    QCOMPARE(layers->count(), 1);
+}
+
+void ActionManagerTests::testDialogToggleShortcuts()
+{
+    QVInfoDialog details;
+    details.show();
+    auto *detailsToggle = details.findChild<QShortcut *>("detailsToggleShortcut");
+    QVERIFY(detailsToggle);
+    QCOMPARE(detailsToggle->key(), QKeySequence(Qt::Key_I));
+    QVERIFY(QMetaObject::invokeMethod(detailsToggle, "activated"));
+    QVERIFY(!details.isVisible());
+
+    QVOptionsDialog settings;
+    settings.setAttribute(Qt::WA_DeleteOnClose, false);
+    settings.show();
+    auto *settingsToggle = settings.findChild<QShortcut *>("settingsToggleShortcut");
+    QVERIFY(settingsToggle);
+    QCOMPARE(settingsToggle->key(), QKeySequence(Qt::Key_S));
+    QVERIFY(QMetaObject::invokeMethod(settingsToggle, "activated"));
+    QVERIFY(!settings.isVisible());
 }
 
 void ActionManagerTests::testExportDialog()
@@ -141,9 +203,9 @@ void ActionManagerTests::testExportCanvasState()
     canvas.scale(-1, -1);
     canvas.togglePlaybackLoopMode();
     QVFilters::Settings filters;
-    filters.brightness = 15;
-    filters.contrast = -20;
-    filters.saturation = 30;
+    filters.layers[0].brightness = 15;
+    filters.layers[0].contrast = -20;
+    filters.layers[0].saturation = 30;
     canvas.setFilterSettings(filters);
     auto source = canvas.exportSource();
     QCOMPARE(source.rotation, 90);
@@ -251,7 +313,7 @@ void ActionManagerTests::testPlaybackActionsAndDefaultShortcuts()
     QVERIFY(defaultShortcuts.value("pause").contains(QKeySequence(Qt::Key_Space).toString()));
     QVERIFY(!defaultShortcuts.value("pause").contains(QKeySequence(Qt::Key_P).toString()));
     QCOMPARE(defaultShortcuts.value("filters"),
-             QStringList(QKeySequence(Qt::Key_P).toString()));
+             QStringList(QKeySequence(Qt::Key_U).toString()));
     QVERIFY(defaultShortcuts.value("mute").contains(QKeySequence(Qt::Key_M).toString()));
     QVERIFY(defaultShortcuts.value("loop").contains(QKeySequence(Qt::Key_L).toString()));
     QCOMPARE(defaultShortcuts.value("opencontainingfolder"),

@@ -242,6 +242,11 @@ void QVApplication::openOptionsDialog(QWidget *parent)
 #endif
 
     if (optionsDialog) {
+        if (optionsDialog->isVisible()) {
+            optionsDialog->close();
+            return;
+        }
+        optionsDialog->show();
         optionsDialog->raise();
         optionsDialog->activateWindow();
         return;

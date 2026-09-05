@@ -7,12 +7,16 @@
 #include <QMessageBox>
 #include <QSettings>
 #include <QKeySequence>
+#include <QShortcut>
 
 #include <QDebug>
 
 QVOptionsDialog::QVOptionsDialog(QWidget *parent) : QDialog(parent), ui(new Ui::QVOptionsDialog)
 {
     ui->setupUi(this);
+    auto *toggleShortcut = new QShortcut(Qt::Key_S, this);
+    toggleShortcut->setObjectName("settingsToggleShortcut");
+    connect(toggleShortcut, &QShortcut::activated, this, &QDialog::close);
 
     // Set platform-specific modifier text for Ctrl drag checkbox
     QString ctrlString = QKeySequence(Qt::ControlModifier).toString().remove('+');

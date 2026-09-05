@@ -64,11 +64,15 @@ for the build.
 
 ## Filters
 
-P opens a non-modal Filters window for the current canvas. Brightness, contrast,
-and saturation changes are applied live to still images, animated images, and
-video frames. Filter state belongs to each viewer window and remains active while
-navigating between media; Reset returns all controls to their neutral values.
-Space remains the default pause/resume shortcut.
+U opens or closes a non-modal Filters window for the current canvas. Each layer
+has brightness, contrast, saturation, hue, and transparency controls. Layers are
+applied in list order and can be added or removed. A layer's optional linear
+gradient mask provides center X/Y, direction, and transition-softness controls;
+0 degrees points right and 90 degrees points down. Changes are applied live to
+still images, animated images, and video frames. Filter state belongs to each
+viewer window and remains active while navigating between media. Space remains
+the default pause/resume shortcut. I and S likewise toggle File Details and
+Settings respectively.
 
 ## Export
 
@@ -80,8 +84,8 @@ playback state. Rotation is applied before screen-axis flips, then resizing; out
 dimensions swap when toggling a quarter-turn. Sizing can use pixels or a percentage
 of the original dimensions. The editable filename is carried into the save dialog.
 Canvas zoom does not affect export. **Apply canvas filters** is checked by default
-and applies the active brightness, contrast, and saturation settings to a current
-frame or every frame of a whole-media export. Whole-video export offers a speed multiplier,
+and applies all active filter layers to a current frame or every frame of a
+whole-media export. Whole-video export offers a speed multiplier,
 initialized from playback speed, and adjusts audio tempo while preserving pitch.
 Whole-media export can reverse playback (including included audio).
 Animated frame durations are reversed with their frames. Video reversal uses

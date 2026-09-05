@@ -819,6 +819,10 @@ void MainWindow::openContainingFolder()
 
 void MainWindow::showFileInfo()
 {
+    if (info->isVisible()) {
+        info->close();
+        return;
+    }
     refreshProperties();
     info->show();
     info->raise();
@@ -1210,12 +1214,14 @@ void MainWindow::showFilters()
 {
     if (!graphicsView->isMediaLoaded())
         return;
+    if (filtersDialog && filtersDialog->isVisible()) {
+        filtersDialog->close();
+        return;
+    }
     if (!filtersDialog) {
         filtersDialog = new QVFiltersDialog(graphicsView->filterSettings(), this);
-        filtersDialog->setAttribute(Qt::WA_DeleteOnClose);
         connect(filtersDialog, &QVFiltersDialog::filtersChanged,
                 graphicsView, &QVGraphicsView::setFilterSettings);
-        connect(filtersDialog, &QObject::destroyed, this, [this] { filtersDialog = nullptr; });
     }
     filtersDialog->show();
     filtersDialog->raise();

@@ -68,7 +68,7 @@ void ExportTests::filters()
     sourceImage.setPixelColor(0, 0, QColor(100, 150, 200, 77));
 
     QVFilters::Settings settings;
-    settings.brightness = 10;
+    settings.layers[0].brightness = 10;
     const QColor brighter = QVFilters::apply(sourceImage, settings).pixelColor(0, 0);
     QVERIFY(brighter.red() > 100);
     QVERIFY(brighter.green() > 150);
@@ -76,17 +76,34 @@ void ExportTests::filters()
     QCOMPARE(brighter.alpha(), 77);
 
     settings = {};
-    settings.saturation = -100;
+    settings.layers[0].saturation = -100;
     const QColor grayscale = QVFilters::apply(sourceImage, settings).pixelColor(0, 0);
     QCOMPARE(grayscale.red(), grayscale.green());
     QCOMPARE(grayscale.green(), grayscale.blue());
+
+    QImage gradientSource(3, 1, QImage::Format_ARGB32);
+    gradientSource.fill(QColor(120, 80, 40, 255));
+    settings = {};
+    settings.layers[0].transparency = 100;
+    settings.layers[0].gradient = true;
+    settings.layers[0].centerX = 50;
+    settings.layers[0].centerY = 50;
+    settings.layers[0].direction = 0;
+    settings.layers[0].softness = 100;
+    const QImage faded = QVFilters::apply(gradientSource, settings);
+    QVERIFY(faded.pixelColor(0, 0).alpha() > faded.pixelColor(1, 0).alpha());
+    QVERIFY(faded.pixelColor(1, 0).alpha() > faded.pixelColor(2, 0).alpha());
+
+    settings.layers.append(QVFilters::Layer());
+    settings.layers[1].hue = 120;
+    QVERIFY(QVFilters::apply(gradientSource, settings) != faded);
 
     QTemporaryDir directory;
     QVExport::Source source;
     source.frame = sourceImage;
     QVExport::Options options;
     options.size = sourceImage.size();
-    options.filters.brightness = 10;
+    options.filters.layers[0].brightness = 10;
     const QString output = directory.filePath("filtered.png");
     const auto result = QVExport::run(source, options, output, {},
                                       std::make_shared<std::atomic_bool>(false));
@@ -95,12 +112,14 @@ void ExportTests::filters()
 
     options.wholeMedia = true;
     options.format = "mp4";
-    options.filters.contrast = 20;
-    options.filters.saturation = -30;
+    options.filters.layers[0].contrast = 20;
+    options.filters.layers[0].saturation = -30;
+    options.filters.layers[0].hue = 45;
+    options.filters.layers[0].gradient = true;
     const auto args = QVExport::arguments("input.mp4", "output.mp4", options);
     const QString videoFilters = args.at(args.indexOf("-vf") + 1);
-    QVERIFY(videoFilters.contains(
-            "eq=brightness=0.1000:contrast=1.2000:saturation=0.7000"));
+    QVERIFY(videoFilters.contains("format=rgba,geq="));
+    QVERIFY(videoFilters.contains("X/max(W-1\\,1)"));
 }
 
 void ExportTests::preservesFilesOnFailureAndCancellation()
@@ -244,6 +263,17 @@ void ExportTests::wholeMedia()
     options.format = "webm";
     result = QVExport::run(source, options, directory.filePath("video.webm"), ffmpeg, cancel);
     QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
+
+    options.filters.layers[0].brightness = 15;
+    options.filters.layers[0].hue = 30;
+    options.filters.layers[0].transparency = 25;
+    options.filters.layers[0].gradient = true;
+    options.filters.layers[0].direction = 90;
+    const QString filteredVideo = directory.filePath("video-filtered.webm");
+    result = QVExport::run(source, options, filteredVideo, ffmpeg, cancel);
+    QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
+    QVERIFY(QFileInfo(filteredVideo).size() > 0);
+    options.filters = {};
 
     const QString withAudio = directory.filePath("with-audio.mp4");
     fixture.start(ffmpeg, { "-v", "error", "-i", source.path, "-f", "lavfi", "-i",

@@ -3,6 +3,7 @@
 #include <QDateTime>
 #include <QMimeDatabase>
 #include <QTimer>
+#include <QShortcut>
 
 static int getGcd(int a, int b)
 {
@@ -12,6 +13,9 @@ static int getGcd(int a, int b)
 QVInfoDialog::QVInfoDialog(QWidget *parent) : QDialog(parent), ui(new Ui::QVInfoDialog)
 {
     ui->setupUi(this);
+    auto *toggleShortcut = new QShortcut(Qt::Key_I, this);
+    toggleShortcut->setObjectName("detailsToggleShortcut");
+    connect(toggleShortcut, &QShortcut::activated, this, &QDialog::close);
     setWindowFlags(windowFlags() & (~Qt::WindowContextHelpButtonHint | Qt::CustomizeWindowHint));
 
     width = 0;

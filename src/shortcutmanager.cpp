@@ -28,6 +28,13 @@ void ShortcutManager::updateShortcuts()
             settings.setValue("pause", pauseShortcuts);
         }
     }
+    if (settings.contains("filters")) {
+        const QStringList oldFilterDefault{ QKeySequence(Qt::Key_P).toString() };
+        if (settings.value("filters").toStringList() == oldFilterDefault) {
+            settings.setValue("filters",
+                              QStringList(QKeySequence(Qt::Key_U).toString()));
+        }
+    }
 
     // Set all shortcuts to the user-set shortcut or the default
     for (auto &shortcut : shortcutsList) {
@@ -176,7 +183,7 @@ void ShortcutManager::initializeShortcutsList()
                            {} });
     shortcutsList.append({ tr("Filters"),
                            "filters",
-                           QStringList(QKeySequence(Qt::Key_P).toString()),
+                           QStringList(QKeySequence(Qt::Key_U).toString()),
                            {} });
     shortcutsList.append({ tr("Pause"),
                            "pause",
