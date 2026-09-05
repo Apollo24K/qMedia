@@ -272,6 +272,8 @@ QMenu *ActionManager::buildToolsMenu(bool addIcon, QWidget *parent)
         toolsMenu->setIcon(QIcon::fromTheme("configure", QIcon::fromTheme("preferences-other")));
 
     addCloneOfAction(toolsMenu, "saveframeas");
+    addCloneOfAction(toolsMenu, "filters");
+    toolsMenu->addSeparator();
     addCloneOfAction(toolsMenu, "pause");
     addCloneOfAction(toolsMenu, "mute");
     addCloneOfAction(toolsMenu, "loop");
@@ -619,6 +621,8 @@ void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *releva
         relevantWindow->lastFile();
     } else if (key == "saveframeas") {
         relevantWindow->saveFrameAs();
+    } else if (key == "filters") {
+        relevantWindow->showFilters();
     } else if (key == "pause") {
         relevantWindow->pause();
     } else if (key == "mute") {
@@ -791,6 +795,10 @@ void ActionManager::initializeActionLibrary()
             new QAction(QIcon::fromTheme("document-save-as"), tr("&Export..."));
     saveFrameAsAction->setData({ "mediadisable" });
     actionLibrary.insert("saveframeas", saveFrameAsAction);
+
+    auto *filtersAction = new QAction(QIcon::fromTheme("preferences-color"), tr("&Filters..."));
+    filtersAction->setData({ "mediadisable" });
+    actionLibrary.insert("filters", filtersAction);
 
     auto *pauseAction = new QAction(QIcon::fromTheme("media-playback-pause"), tr("Pa&use"));
     pauseAction->setData({ "playbackdisable" });

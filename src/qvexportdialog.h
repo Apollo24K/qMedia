@@ -63,6 +63,7 @@ private:
     QCheckBox *mirror;
     QCheckBox *flip;
     QCheckBox *reverse;
+    QCheckBox *applyFilters;
     QLabel *preview;
     QLabel *previewStatus;
     QPushButton *playPreview;

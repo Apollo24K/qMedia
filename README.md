@@ -18,7 +18,8 @@
 </p>
 
 qMedia retains qView's lightweight image-viewing workflow while adding mixed-media
-navigation, video playback, synchronized audio, and shared canvas controls.
+navigation, video playback, synchronized audio, shared canvas controls, and live
+brightness, contrast, and saturation filters.
 
 ## Clipboard and URLs
 

@@ -16,6 +16,19 @@ void ShortcutManager::updateShortcuts()
     QSettings settings;
     settings.beginGroup("shortcuts");
 
+    // Older settings dialogs saved every shortcut, including unchanged defaults.
+    // Free P from that persisted Pause binding when Filters is introduced. Once
+    // Filters has itself been saved, subsequent user customizations are preserved.
+    if (!settings.contains("filters") && settings.contains("pause")) {
+        QStringList pauseShortcuts = settings.value("pause").toStringList();
+        const QStringList oldDefaults{ QKeySequence(Qt::Key_Space).toString(),
+                                       QKeySequence(Qt::Key_P).toString() };
+        if (pauseShortcuts == oldDefaults) {
+            pauseShortcuts.removeAll(QKeySequence(Qt::Key_P).toString());
+            settings.setValue("pause", pauseShortcuts);
+        }
+    }
+
     // Set all shortcuts to the user-set shortcut or the default
     for (auto &shortcut : shortcutsList) {
         shortcut.shortcuts =
@@ -161,10 +174,13 @@ void ShortcutManager::initializeShortcutsList()
                            "saveframeas",
                            keyBindingsToStringList(QKeySequence::Save),
                            {} });
+    shortcutsList.append({ tr("Filters"),
+                           "filters",
+                           QStringList(QKeySequence(Qt::Key_P).toString()),
+                           {} });
     shortcutsList.append({ tr("Pause"),
                            "pause",
-                           { QKeySequence(Qt::Key_Space).toString(),
-                             QKeySequence(Qt::Key_P).toString() },
+                           QStringList(QKeySequence(Qt::Key_Space).toString()),
                            {} });
     shortcutsList.append(
             { tr("Mute"), "mute", QStringList(QKeySequence(Qt::Key_M).toString()), {} });

@@ -1,6 +1,7 @@
 #include "qvgraphicsview.h"
 #include "qvapplication.h"
 #include "qvvideoview.h"
+#include "qvfiltereffect.h"
 #include "qvinfodialog.h"
 #include "qvcocoafunctions.h"
 #include "settingsmanager.h"
@@ -51,6 +52,7 @@ QVExport::Source QVGraphicsView::exportSource() const
             || (loopMode == QVPlaybackLoopMode::Default && !source.video
                 && imageCore.currentAnimationLoopsByDefault());
     source.muted = source.video && isVideoMuted();
+    source.filters = filters;
     return source;
 }
 
@@ -982,6 +984,11 @@ void QVGraphicsView::ensureVideoView()
     QElapsedTimer initializationTimer;
     initializationTimer.start();
     videoView = new QVVideoView(scene(), this);
+    if (!filters.isNeutral()) {
+        auto *filterEffect = new QVFilterEffect();
+        filterEffect->setFilterSettings(filters);
+        videoView->graphicsItem()->setGraphicsEffect(filterEffect);
+    }
     videoView->setLoopMode(loopMode);
     videoView->recordInitializationDuration(initializationTimer.elapsed());
     connect(videoView, &QVVideoView::nativeSizeChanged, this, [this](const QSizeF &size) {
@@ -1003,6 +1010,29 @@ void QVGraphicsView::ensureVideoView()
     connect(videoView, &QVVideoView::playbackStateChanged, this,
             &QVGraphicsView::videoPlaybackStateChanged);
     connect(videoView, &QVVideoView::errorOccurred, this, &QVGraphicsView::videoErrorOccurred);
+}
+
+void QVGraphicsView::setFilterSettings(const QVFilters::Settings &settings)
+{
+    if (filters == settings)
+        return;
+    filters = settings;
+    const auto updateEffect = [this](QGraphicsItem *item) {
+        if (filters.isNeutral()) {
+            item->setGraphicsEffect(nullptr);
+            return;
+        }
+        auto *effect = static_cast<QVFilterEffect *>(item->graphicsEffect());
+        if (!effect) {
+            effect = new QVFilterEffect();
+            item->setGraphicsEffect(effect);
+        }
+        effect->setFilterSettings(filters);
+    };
+    updateEffect(loadedPixmapItem);
+    if (videoView)
+        updateEffect(videoView->graphicsItem());
+    viewport()->update();
 }
 
 void QVGraphicsView::activateImageCanvas()

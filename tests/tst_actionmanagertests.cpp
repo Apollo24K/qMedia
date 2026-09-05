@@ -4,6 +4,7 @@
 #include "qvoptionsdialog.h"
 #include "qvplaybackloopmode.h"
 #include "qvexportdialog.h"
+#include "qvfiltersdialog.h"
 #include <QComboBox>
 #include <QSpinBox>
 #include <QCheckBox>
@@ -16,6 +17,9 @@
 #include <QDoubleSpinBox>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QApplication>
+#include <QSlider>
+#include <QWheelEvent>
 
 class ActionManagerTests : public QObject
 {
@@ -34,11 +38,25 @@ private slots:
     void testSvgViewport();
     void testExportDialog();
     void testExportCanvasState();
+    void testFiltersDialogWheelStep();
 };
 
 ActionManagerTests::ActionManagerTests() { }
 
 ActionManagerTests::~ActionManagerTests() { }
+
+void ActionManagerTests::testFiltersDialogWheelStep()
+{
+    QVFilters::Settings filters;
+    QVFiltersDialog dialog(filters);
+    auto *brightness = dialog.findChild<QSlider *>("brightnessSlider");
+    QVERIFY(brightness);
+    QCOMPARE(brightness->value(), 0);
+    QWheelEvent wheel(QPointF(10, 10), QPointF(10, 10), QPoint(), QPoint(0, 120),
+                      Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(brightness, &wheel);
+    QCOMPARE(brightness->value(), 1);
+}
 
 void ActionManagerTests::testExportDialog()
 {
@@ -122,17 +140,24 @@ void ActionManagerTests::testExportCanvasState()
     canvas.rotateImage(90);
     canvas.scale(-1, -1);
     canvas.togglePlaybackLoopMode();
+    QVFilters::Settings filters;
+    filters.brightness = 15;
+    filters.contrast = -20;
+    filters.saturation = 30;
+    canvas.setFilterSettings(filters);
     auto source = canvas.exportSource();
     QCOMPARE(source.rotation, 90);
     QVERIFY(source.mirrored);
     QVERIFY(source.flipped);
     QVERIFY(source.loop);
+    QVERIFY(source.filters == filters);
     QVExportDialog dialog(source);
     auto *rotation = dialog.findChild<QCheckBox *>("exportRotate");
     QVERIFY(rotation->isChecked());
     QVERIFY(dialog.findChild<QCheckBox *>("exportMirror")->isChecked());
     QVERIFY(dialog.findChild<QCheckBox *>("exportFlip")->isChecked());
     QVERIFY(dialog.findChild<QCheckBox *>("exportLoop")->isChecked());
+    QVERIFY(dialog.findChild<QCheckBox *>("exportApplyFilters")->isChecked());
     auto *width = dialog.findChild<QSpinBox *>("exportWidth");
     auto *height = dialog.findChild<QSpinBox *>("exportHeight");
     QCOMPARE(width->value(), 24);
@@ -186,7 +211,7 @@ void ActionManagerTests::testCanvasActionsSupportAllVisualMedia()
 {
     const QStringList canvasActions = { "zoomin",      "zoomout",    "resetzoom",
                                         "originalsize", "rotateright", "rotateleft",
-                                        "mirror",      "flip", "saveframeas" };
+                                        "mirror",      "flip", "saveframeas", "filters" };
     const auto &actionLibrary = qvApp->getActionManager().getActionLibrary();
     for (const QString &key : canvasActions) {
         QVERIFY2(actionLibrary.contains(key), qPrintable(key));
@@ -224,6 +249,9 @@ void ActionManagerTests::testPlaybackActionsAndDefaultShortcuts()
         defaultShortcuts.insert(shortcut.name, shortcut.defaultShortcuts);
 
     QVERIFY(defaultShortcuts.value("pause").contains(QKeySequence(Qt::Key_Space).toString()));
+    QVERIFY(!defaultShortcuts.value("pause").contains(QKeySequence(Qt::Key_P).toString()));
+    QCOMPARE(defaultShortcuts.value("filters"),
+             QStringList(QKeySequence(Qt::Key_P).toString()));
     QVERIFY(defaultShortcuts.value("mute").contains(QKeySequence(Qt::Key_M).toString()));
     QVERIFY(defaultShortcuts.value("loop").contains(QKeySequence(Qt::Key_L).toString()));
     QCOMPARE(defaultShortcuts.value("opencontainingfolder"),

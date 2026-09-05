@@ -22,6 +22,9 @@ set(TEST_SOURCES
     ../src/qvclipboard.cpp
     ../src/qvexport.cpp
     ../src/qvexportdialog.cpp
+    ../src/qvfilters.cpp
+    ../src/qvfiltereffect.cpp
+    ../src/qvfiltersdialog.cpp
     ../src/qvvideoview.cpp
     ../src/qvshortcutdialog.cpp
     ../src/actionmanager.cpp
@@ -121,7 +124,7 @@ target_link_libraries(clipboardtests PRIVATE Qt${QT_VERSION_MAJOR}::Gui
     Qt${QT_VERSION_MAJOR}::Test)
 add_test(NAME ClipboardTests COMMAND clipboardtests)
 
-add_executable(exporttests tst_exporttests.cpp ../src/qvexport.cpp)
+add_executable(exporttests tst_exporttests.cpp ../src/qvexport.cpp ../src/qvfilters.cpp)
 target_include_directories(exporttests PRIVATE ../src)
 target_link_libraries(exporttests PRIVATE Qt${QT_VERSION_MAJOR}::Gui Qt${QT_VERSION_MAJOR}::Test)
 add_test(NAME ExportTests COMMAND exporttests)

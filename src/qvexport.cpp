@@ -76,6 +76,7 @@ QStringList arguments(const QString &input, const QString &output, const Options
     if (rotation == 270) filters << "transpose=cclock";
     if (o.mirrored) filters << "hflip";
     if (o.flipped) filters << "vflip";
+    if (!o.filters.isNeutral()) filters << QVFilters::ffmpegFilter(o.filters);
     filters << QString("scale=%1:%2:flags=lanczos").arg(o.size.width()).arg(o.size.height());
     if (o.reverse && !concat) filters << "reverse" << "setpts=PTS-STARTPTS";
     if (!qFuzzyCompare(o.speed, 1.0))
@@ -189,6 +190,7 @@ Result run(const Source &source, const Options &options, const QString &destinat
         frame = frame.transformed(QTransform().rotate(options.rotation))
                         .mirrored(options.mirrored, options.flipped);
         frame = frame.scaled(options.size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        frame = QVFilters::apply(frame, options.filters);
         // Flatten transparency explicitly for formats without an alpha channel.
         if (options.format == "jpeg" || options.format == "bmp") {
             QImage opaque(frame.size(), QImage::Format_RGB32);

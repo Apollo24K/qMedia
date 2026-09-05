@@ -62,6 +62,14 @@ KImageFormats decoders as well. The plugin version is selected from the active
 Qt installation, so run the script in the same configured Qt environment used
 for the build.
 
+## Filters
+
+P opens a non-modal Filters window for the current canvas. Brightness, contrast,
+and saturation changes are applied live to still images, animated images, and
+video frames. Filter state belongs to each viewer window and remains active while
+navigating between media; Reset returns all controls to their neutral values.
+Space remains the default pause/resume shortcut.
+
 ## Export
 
 Ctrl+S opens Export for the current image, animation, or video. Playback and the
@@ -71,7 +79,9 @@ vertical flipping, looping, and audio inclusion start with the current canvas an
 playback state. Rotation is applied before screen-axis flips, then resizing; output
 dimensions swap when toggling a quarter-turn. Sizing can use pixels or a percentage
 of the original dimensions. The editable filename is carried into the save dialog.
-Canvas zoom does not affect export. Whole-video export offers a speed multiplier,
+Canvas zoom does not affect export. **Apply canvas filters** is checked by default
+and applies the active brightness, contrast, and saturation settings to a current
+frame or every frame of a whole-media export. Whole-video export offers a speed multiplier,
 initialized from playback speed, and adjusts audio tempo while preserving pitch.
 Whole-media export can reverse playback (including included audio).
 Animated frame durations are reversed with their frames. Video reversal uses

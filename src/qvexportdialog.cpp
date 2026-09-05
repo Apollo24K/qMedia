@@ -165,6 +165,10 @@ QVExportDialog::QVExportDialog(const QVExport::Source &source, QWidget *parent)
     reverse->setObjectName("exportReverse");
     reverse->setToolTip(tr("Reverse the entire clip, including audio. Long videos can require substantial memory."));
     form->addRow(QString(), reverse);
+    applyFilters = new QCheckBox(tr("Apply canvas filters"), this);
+    applyFilters->setObjectName("exportApplyFilters");
+    applyFilters->setChecked(true);
+    form->addRow(QString(), applyFilters);
     lastRotation = source.rotation;
     width->setValue(orientedSize().width());
     height->setValue(orientedSize().height());
@@ -197,7 +201,7 @@ QVExportDialog::QVExportDialog(const QVExport::Source &source, QWidget *parent)
     connect(playPreview, &QPushButton::clicked, this, [this] { requestPreview(true); });
     connect(rotate, &QCheckBox::toggled, this, &QVExportDialog::rotationChanged);
     connect(rotation, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &QVExportDialog::rotationChanged);
-    for (auto *box : { mirror, flip, reverse, loop, audio })
+    for (auto *box : { mirror, flip, reverse, loop, audio, applyFilters })
         connect(box, &QCheckBox::toggled, this, [this] { requestPreview(); });
     connect(sizeMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
         if (index == 1) {
@@ -404,7 +408,8 @@ void QVExportDialog::updateControls()
     const bool movie = whole && (name == "mp4" || name == "webm");
     const bool needsFFmpeg = whole || (source.video && source.frame.isNull());
     const bool missing = needsFFmpeg && QVExport::findFFmpeg().isEmpty();
-    for (QWidget *widget : QList<QWidget *>{ scope, format, width, height, aspect, rotate, mirror, flip, fileName, sizeMode })
+    for (QWidget *widget : QList<QWidget *>{ scope, format, width, height, aspect, rotate,
+                                             mirror, flip, applyFilters, fileName, sizeMode })
         widget->setEnabled(!busy);
     const bool percentMode = sizeMode->currentIndex() == 1;
     percentage->setVisible(percentMode);
@@ -504,6 +509,8 @@ QVExport::Options QVExportDialog::selectedOptions() const
     options.flipped = flip->isChecked();
     options.reverse = options.wholeMedia && reverse->isChecked();
     options.speed = options.wholeMedia && source.video ? speed->value() : 1.0;
+    if (applyFilters->isChecked())
+        options.filters = source.filters;
     return options;
 }
 

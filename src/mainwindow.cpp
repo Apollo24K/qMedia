@@ -5,6 +5,7 @@
 #include "qvrenamedialog.h"
 #include "qvclipboard.h"
 #include "qvexportdialog.h"
+#include "qvfiltersdialog.h"
 
 #include <QFileDialog>
 #include <QMessageBox>
@@ -1203,6 +1204,22 @@ void MainWindow::nextFrame()
         pauseAction->setText(tr("Res&ume"));
         pauseAction->setIcon(QIcon::fromTheme("media-playback-start"));
     }
+}
+
+void MainWindow::showFilters()
+{
+    if (!graphicsView->isMediaLoaded())
+        return;
+    if (!filtersDialog) {
+        filtersDialog = new QVFiltersDialog(graphicsView->filterSettings(), this);
+        filtersDialog->setAttribute(Qt::WA_DeleteOnClose);
+        connect(filtersDialog, &QVFiltersDialog::filtersChanged,
+                graphicsView, &QVGraphicsView::setFilterSettings);
+        connect(filtersDialog, &QObject::destroyed, this, [this] { filtersDialog = nullptr; });
+    }
+    filtersDialog->show();
+    filtersDialog->raise();
+    filtersDialog->activateWindow();
 }
 
 void MainWindow::previousFrame()

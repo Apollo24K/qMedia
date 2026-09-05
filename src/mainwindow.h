@@ -14,6 +14,7 @@
 namespace Ui {
 class MainWindow;
 }
+class QVFiltersDialog;
 
 class MainWindow : public QMainWindow
 {
@@ -103,6 +104,8 @@ public:
 
     void saveFrameAs();
 
+    void showFilters();
+
     void pause();
 
     void toggleMute();
@@ -180,6 +183,7 @@ private:
     QShortcut *escShortcut;
 
     QVInfoDialog *info;
+    QVFiltersDialog *filtersDialog = nullptr;
 
     QColor customBackgroundColor;
     QColor alternateBackgroundColor;

@@ -13,6 +13,7 @@ private slots:
     void conversionArguments();
     void wholeMedia();
     void transforms();
+    void filters();
     void videoSpeed();
 };
 
@@ -59,6 +60,47 @@ void ExportTests::transforms()
     QCOMPARE(image.size(), QSize(3, 2));
     QCOMPARE(image.pixelColor(0, 0), QColor(Qt::green));
     QCOMPARE(image.pixelColor(2, 1), QColor(Qt::cyan));
+}
+
+void ExportTests::filters()
+{
+    QImage sourceImage(1, 1, QImage::Format_ARGB32);
+    sourceImage.setPixelColor(0, 0, QColor(100, 150, 200, 77));
+
+    QVFilters::Settings settings;
+    settings.brightness = 10;
+    const QColor brighter = QVFilters::apply(sourceImage, settings).pixelColor(0, 0);
+    QVERIFY(brighter.red() > 100);
+    QVERIFY(brighter.green() > 150);
+    QVERIFY(brighter.blue() > 200);
+    QCOMPARE(brighter.alpha(), 77);
+
+    settings = {};
+    settings.saturation = -100;
+    const QColor grayscale = QVFilters::apply(sourceImage, settings).pixelColor(0, 0);
+    QCOMPARE(grayscale.red(), grayscale.green());
+    QCOMPARE(grayscale.green(), grayscale.blue());
+
+    QTemporaryDir directory;
+    QVExport::Source source;
+    source.frame = sourceImage;
+    QVExport::Options options;
+    options.size = sourceImage.size();
+    options.filters.brightness = 10;
+    const QString output = directory.filePath("filtered.png");
+    const auto result = QVExport::run(source, options, output, {},
+                                      std::make_shared<std::atomic_bool>(false));
+    QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
+    QCOMPARE(QImage(output).pixelColor(0, 0), brighter);
+
+    options.wholeMedia = true;
+    options.format = "mp4";
+    options.filters.contrast = 20;
+    options.filters.saturation = -30;
+    const auto args = QVExport::arguments("input.mp4", "output.mp4", options);
+    const QString videoFilters = args.at(args.indexOf("-vf") + 1);
+    QVERIFY(videoFilters.contains(
+            "eq=brightness=0.1000:contrast=1.2000:saturation=0.7000"));
 }
 
 void ExportTests::preservesFilesOnFailureAndCancellation()
