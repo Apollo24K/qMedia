@@ -5,6 +5,7 @@
 #include "qvrenamedialog.h"
 #include "qvclipboard.h"
 #include "qvexportdialog.h"
+#include "qvlayershud.h"
 #include "qvfiltersdialog.h"
 
 #include <QFileDialog>
@@ -415,6 +416,7 @@ void MainWindow::openRecent(int i)
 
 void MainWindow::fileChanged()
 {
+    if (layersHud) layersHud->setSource(getCurrentMedia().fileInfo.fileName(), getIsMediaLoaded());
     populateOpenWithTimer->start();
     disableActions();
 
@@ -1210,22 +1212,44 @@ void MainWindow::nextFrame()
     }
 }
 
+void MainWindow::ensureLayersHud()
+{
+    if (layersHud) return;
+    layersHud = new QVLayersHud(graphicsView->layerModel(), graphicsView->viewport());
+    connect(layersHud, &QVLayersHud::filtersRequested, this, &MainWindow::openFilters);
+    connect(layersHud, &QVLayersHud::exportRequested, this, &MainWindow::saveFrameAs);
+    connect(layersHud, &QVLayersHud::resetViewRequested, this, &MainWindow::resetView);
+    layersHud->setSource(getCurrentMedia().fileInfo.fileName(), getIsMediaLoaded());
+}
+
+void MainWindow::toggleLayers()
+{
+    ensureLayersHud();
+    layersHud->toggle();
+}
+
+void MainWindow::openFilters(quint64 layerId)
+{
+    if (!graphicsView->isMediaLoaded()) return;
+    auto *model = graphicsView->layerModel();
+    bool hasFilter = false;
+    for (const auto &layer : model->stack().layers)
+        hasFilter |= layer.kind == QVLayers::Kind::Filter;
+    if (!hasFilter) layerId = model->addFilter();
+    if (!filtersDialog) filtersDialog = new QVFiltersDialog(model, this);
+    filtersDialog->selectLayer(layerId);
+    filtersDialog->show();
+    filtersDialog->raise();
+    filtersDialog->activateWindow();
+}
+
 void MainWindow::showFilters()
 {
-    if (!graphicsView->isMediaLoaded())
-        return;
     if (filtersDialog && filtersDialog->isVisible()) {
         filtersDialog->close();
         return;
     }
-    if (!filtersDialog) {
-        filtersDialog = new QVFiltersDialog(graphicsView->filterSettings(), this);
-        connect(filtersDialog, &QVFiltersDialog::filtersChanged,
-                graphicsView, &QVGraphicsView::setFilterSettings);
-    }
-    filtersDialog->show();
-    filtersDialog->raise();
-    filtersDialog->activateWindow();
+    openFilters(layersHud ? layersHud->selectedLayerId() : 0);
 }
 
 void MainWindow::previousFrame()

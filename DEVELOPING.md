@@ -62,17 +62,36 @@ KImageFormats decoders as well. The plugin version is selected from the active
 Qt installation, so run the script in the same configured Qt environment used
 for the build.
 
-## Filters
+## Layers HUD
 
-U opens or closes a non-modal Filters window for the current canvas. Each layer
-has brightness, contrast, saturation, hue, and transparency controls. Layers are
-applied in list order and can be added or removed. A layer's optional linear
-gradient mask provides center X/Y, direction, and transition-softness controls;
-0 degrees points right and 90 degrees points down. Changes are applied live to
-still images, animated images, and video frames. Filter state belongs to each
-viewer window and remains active while navigating between media. Space remains
-the default pause/resume shortcut. I and S likewise toggle File Details and
-Settings respectively.
+H toggles a floating Layers panel and a slim SVG tool strip. Drag their headers
+to move them; they snap to the canvas edges. The Layers panel defaults to the
+bottom-right, while the tool strip defaults to the top-left. Drag any edge or corner of the Layers
+panel to resize it, and double-click a header to restore its default placement.
+Placement and panel size are remembered. The overlays never resize the canvas
+or change its pan and zoom. L continues to toggle looping.
+
+The stack is displayed top to bottom, with higher layers composited over lower
+ones. Drag rows or use the arrow buttons to reorder. Double-click a name (or use
+F2), click an eye to change visibility, and use the duplicate and remove buttons
+to manage layers. Delete removes the selected layer while the list has focus;
+Space toggles its visibility. The last source layer is kept and can be hidden.
+Each layer has strength and Normal, Multiply, Screen, Overlay, Darken, and Lighten
+blend modes. A source copy uses the current decoded frame, including for video;
+it does not start another player or duplicate its audio.
+
+U toggles the separate Filters window, selecting the HUD's selected filter when
+applicable and adding one if none exists. The toolbar filter icon opens that
+window; the Layers panel's add button adds an adjustment above the selected layer.
+The Filters window and HUD share the same layer state, but filter adjustment
+controls stay in the Filters window. Filters affect the composite
+below them, with brightness, contrast, saturation, hue, transparency, and an
+optional gradient mask. Gradient direction 0 degrees points right and 90 degrees
+points down. Filter strength mixes the adjustment with the composite below;
+source strength controls its opacity. Changes apply live to images, animations,
+and video. Layer state belongs to the viewer window and follows navigation,
+with source layers referring to the newly opened media. Source files stay intact;
+use Export to save the result. Drawing and pasted-image layers are future work.
 
 ## Export
 
@@ -83,8 +102,8 @@ vertical flipping, looping, and audio inclusion start with the current canvas an
 playback state. Rotation is applied before screen-axis flips, then resizing; output
 dimensions swap when toggling a quarter-turn. Sizing can use pixels or a percentage
 of the original dimensions. The editable filename is carried into the save dialog.
-Canvas zoom does not affect export. **Apply canvas filters** is checked by default
-and applies all active filter layers to a current frame or every frame of a
+Canvas zoom does not affect export. **Apply canvas layers** is checked by default
+and applies the visible layer stack to a current frame or every frame of a
 whole-media export. Whole-video export offers a speed multiplier,
 initialized from playback speed, and adjusts audio tempo while preserving pitch.
 Whole-media export can reverse playback (including included audio).

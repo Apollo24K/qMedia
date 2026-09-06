@@ -1,7 +1,7 @@
 #ifndef QVEXPORT_H
 #define QVEXPORT_H
 
-#include "qvfilters.h"
+#include "qvlayers.h"
 
 #include <QImage>
 #include <QStringList>
@@ -25,7 +25,7 @@ struct Source {
     bool muted = false;
     qint64 durationMs = -1;
     double speed = 1.0;
-    QVFilters::Settings filters;
+    QVLayers::Stack layers;
 };
 struct Options {
     bool wholeMedia = false;
@@ -39,7 +39,7 @@ struct Options {
     bool flipped = false;
     bool reverse = false;
     double speed = 1.0;
-    QVFilters::Settings filters;
+    QVLayers::Stack layers;
 };
 struct Result {
     QString error;

@@ -272,6 +272,7 @@ QMenu *ActionManager::buildToolsMenu(bool addIcon, QWidget *parent)
         toolsMenu->setIcon(QIcon::fromTheme("configure", QIcon::fromTheme("preferences-other")));
 
     addCloneOfAction(toolsMenu, "saveframeas");
+    addCloneOfAction(toolsMenu, "layers");
     addCloneOfAction(toolsMenu, "filters");
     toolsMenu->addSeparator();
     addCloneOfAction(toolsMenu, "pause");
@@ -621,6 +622,8 @@ void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *releva
         relevantWindow->lastFile();
     } else if (key == "saveframeas") {
         relevantWindow->saveFrameAs();
+    } else if (key == "layers") {
+        relevantWindow->toggleLayers();
     } else if (key == "filters") {
         relevantWindow->showFilters();
     } else if (key == "pause") {
@@ -795,6 +798,9 @@ void ActionManager::initializeActionLibrary()
             new QAction(QIcon::fromTheme("document-save-as"), tr("&Export..."));
     saveFrameAsAction->setData({ "mediadisable" });
     actionLibrary.insert("saveframeas", saveFrameAsAction);
+
+    auto *layersAction = new QAction(QIcon(":/layers/source.svg"), tr("&Layers HUD"));
+    actionLibrary.insert("layers", layersAction);
 
     auto *filtersAction = new QAction(QIcon::fromTheme("preferences-color"), tr("&Filters..."));
     filtersAction->setData({ "mediadisable" });

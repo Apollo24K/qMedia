@@ -181,6 +181,10 @@ void ShortcutManager::initializeShortcutsList()
                            "saveframeas",
                            keyBindingsToStringList(QKeySequence::Save),
                            {} });
+    shortcutsList.append({ tr("Layers HUD"),
+                           "layers",
+                           QStringList(QKeySequence(Qt::Key_H).toString()),
+                           {} });
     shortcutsList.append({ tr("Filters"),
                            "filters",
                            QStringList(QKeySequence(Qt::Key_U).toString()),

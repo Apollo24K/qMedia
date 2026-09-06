@@ -103,7 +103,8 @@ void ExportTests::filters()
     source.frame = sourceImage;
     QVExport::Options options;
     options.size = sourceImage.size();
-    options.filters.layers[0].brightness = 10;
+    options.layers = QVLayers::fromFilters(QVFilters::Settings());
+    options.layers.layers[0].filter.brightness = 10;
     const QString output = directory.filePath("filtered.png");
     const auto result = QVExport::run(source, options, output, {},
                                       std::make_shared<std::atomic_bool>(false));
@@ -112,14 +113,14 @@ void ExportTests::filters()
 
     options.wholeMedia = true;
     options.format = "mp4";
-    options.filters.layers[0].contrast = 20;
-    options.filters.layers[0].saturation = -30;
-    options.filters.layers[0].hue = 45;
-    options.filters.layers[0].gradient = true;
+    options.layers.layers[0].filter.contrast = 20;
+    options.layers.layers[0].filter.saturation = -30;
+    options.layers.layers[0].filter.hue = 45;
+    options.layers.layers[0].filter.gradient = true;
     const auto args = QVExport::arguments("input.mp4", "output.mp4", options);
     const QString videoFilters = args.at(args.indexOf("-vf") + 1);
     QVERIFY(videoFilters.contains("format=rgba,geq="));
-    QVERIFY(videoFilters.contains("X/max(W-1\\,1)"));
+    QVERIFY(videoFilters.contains("X/max(W-1,1)"));
 }
 
 void ExportTests::preservesFilesOnFailureAndCancellation()
@@ -264,16 +265,24 @@ void ExportTests::wholeMedia()
     result = QVExport::run(source, options, directory.filePath("video.webm"), ffmpeg, cancel);
     QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
 
-    options.filters.layers[0].brightness = 15;
-    options.filters.layers[0].hue = 30;
-    options.filters.layers[0].transparency = 25;
-    options.filters.layers[0].gradient = true;
-    options.filters.layers[0].direction = 90;
+    options.layers = QVLayers::fromFilters(QVFilters::Settings());
+    options.layers.layers[0].filter.brightness = 15;
+    options.layers.layers[0].filter.hue = 30;
+    options.layers.layers[0].filter.transparency = 25;
+    options.layers.layers[0].filter.gradient = true;
+    options.layers.layers[0].filter.direction = 90;
     const QString filteredVideo = directory.filePath("video-filtered.webm");
     result = QVExport::run(source, options, filteredVideo, ffmpeg, cancel);
     QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
     QVERIFY(QFileInfo(filteredVideo).size() > 0);
-    options.filters = {};
+    const auto extraLayer = options.layers.layers[0];
+    for (int i = 0; i < 8; ++i) options.layers.layers.prepend(extraLayer);
+    QVERIFY(QVLayers::ffmpegFilter(options.layers).size() > 32768);
+    const QString layeredVideo = directory.filePath("video-layered.webm");
+    result = QVExport::run(source, options, layeredVideo, ffmpeg, cancel);
+    QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
+    QVERIFY(QFileInfo(layeredVideo).size() > 0);
+    options.layers = {};
 
     const QString withAudio = directory.filePath("with-audio.mp4");
     fixture.start(ffmpeg, { "-v", "error", "-i", source.path, "-f", "lavfi", "-i",

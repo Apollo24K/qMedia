@@ -1,7 +1,7 @@
 #ifndef QVFILTERSDIALOG_H
 #define QVFILTERSDIALOG_H
 
-#include "qvfilters.h"
+#include "qvlayers.h"
 
 #include <QDialog>
 
@@ -16,10 +16,9 @@ class QVFiltersDialog : public QDialog
 {
     Q_OBJECT
 public:
-    explicit QVFiltersDialog(const QVFilters::Settings &settings, QWidget *parent = nullptr);
+    explicit QVFiltersDialog(QVLayerModel *model, QWidget *parent = nullptr);
 
-signals:
-    void filtersChanged(const QVFilters::Settings &settings);
+    void selectLayer(quint64 id);
 
 private:
     void addFilterControl(const QString &label, const QString &objectName, int minimum,
@@ -32,7 +31,8 @@ private:
     void resetCurrentLayer();
     void updateLayerNames();
 
-    QVFilters::Settings settings;
+    QVLayerModel *model;
+    quint64 selectedId() const;
     QFormLayout *basicForm;
     QComboBox *layerSelector;
     QPushButton *removeLayerButton;

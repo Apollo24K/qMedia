@@ -5,9 +5,9 @@
 
 QVFilterEffect::QVFilterEffect(QObject *parent) : QGraphicsEffect(parent) { }
 
-void QVFilterEffect::setFilterSettings(const QVFilters::Settings &newSettings)
+void QVFilterEffect::setLayerStack(const QVLayers::Stack &newSettings)
 {
-    if (settings == newSettings)
+    if (settings.samePixels(newSettings))
         return;
     settings = newSettings;
     cacheDirty = true;
@@ -31,7 +31,7 @@ void QVFilterEffect::draw(QPainter *painter)
         const QPixmap source = sourcePixmap(Qt::LogicalCoordinates, &cachedOffset, NoPad);
         if (source.isNull())
             return;
-        cachedPixmap = QPixmap::fromImage(QVFilters::apply(source.toImage(), settings));
+        cachedPixmap = QPixmap::fromImage(QVLayers::apply(source.toImage(), settings));
         cachedPixmap.setDevicePixelRatio(source.devicePixelRatio());
         cacheDirty = false;
     }

@@ -52,7 +52,7 @@ QVExport::Source QVGraphicsView::exportSource() const
             || (loopMode == QVPlaybackLoopMode::Default && !source.video
                 && imageCore.currentAnimationLoopsByDefault());
     source.muted = source.video && isVideoMuted();
-    source.filters = filters;
+    source.layers = layers.stack();
     return source;
 }
 
@@ -114,6 +114,7 @@ QVGraphicsView::QVGraphicsView(QWidget *parent) : QGraphicsView(parent)
 
     loadedPixmapItem = new QGraphicsPixmapItem();
     scene->addItem(loadedPixmapItem);
+    connect(&layers, &QVLayerModel::pixelsChanged, this, &QVGraphicsView::updateLayerEffects);
 
     // Connect to settings signal
     connect(&qvApp->getSettingsManager(), &SettingsManager::settingsUpdated, this,
@@ -984,9 +985,9 @@ void QVGraphicsView::ensureVideoView()
     QElapsedTimer initializationTimer;
     initializationTimer.start();
     videoView = new QVVideoView(scene(), this);
-    if (!filters.isNeutral()) {
+    if (!layers.stack().isNeutral()) {
         auto *filterEffect = new QVFilterEffect();
-        filterEffect->setFilterSettings(filters);
+        filterEffect->setLayerStack(layers.stack());
         videoView->graphicsItem()->setGraphicsEffect(filterEffect);
     }
     videoView->setLoopMode(loopMode);
@@ -1012,13 +1013,10 @@ void QVGraphicsView::ensureVideoView()
     connect(videoView, &QVVideoView::errorOccurred, this, &QVGraphicsView::videoErrorOccurred);
 }
 
-void QVGraphicsView::setFilterSettings(const QVFilters::Settings &settings)
+void QVGraphicsView::updateLayerEffects()
 {
-    if (filters == settings)
-        return;
-    filters = settings;
     const auto updateEffect = [this](QGraphicsItem *item) {
-        if (filters.isNeutral()) {
+        if (layers.stack().isNeutral()) {
             item->setGraphicsEffect(nullptr);
             return;
         }
@@ -1027,11 +1025,10 @@ void QVGraphicsView::setFilterSettings(const QVFilters::Settings &settings)
             effect = new QVFilterEffect();
             item->setGraphicsEffect(effect);
         }
-        effect->setFilterSettings(filters);
+        effect->setLayerStack(layers.stack());
     };
     updateEffect(loadedPixmapItem);
-    if (videoView)
-        updateEffect(videoView->graphicsItem());
+    if (videoView) updateEffect(videoView->graphicsItem());
     viewport()->update();
 }
 

@@ -103,6 +103,23 @@ QString channelExpression(const ColorTransform &transform, int row, const QStrin
 }
 
 namespace QVFilters {
+QStringList channelExpressions(const Layer &layer, const QStringList &channels)
+{
+    const auto transform = colorTransform(layer);
+    const QString mask = maskExpression(layer);
+    QStringList result;
+    for (int c = 0; c < 3; ++c)
+        result << channelExpression(transform, c, mask);
+    result << QStringLiteral("alpha(X,Y)*(1-%1*%2)")
+                      .arg(number(qBound(0, layer.transparency, 100) / 100.0), mask);
+    const QStringList original{ "r(X,Y)", "g(X,Y)", "b(X,Y)", "alpha(X,Y)" };
+    for (auto &expression : result) {
+        for (int c = 0; c < 4; ++c) expression.replace(original[c], channels[c]);
+        expression.replace("\\,", ",");
+    }
+    return result;
+}
+
 bool Settings::isNeutral() const
 {
     for (const auto &layer : layers) {

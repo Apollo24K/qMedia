@@ -5,6 +5,10 @@
 #include "qvplaybackloopmode.h"
 #include "qvexportdialog.h"
 #include "qvfiltersdialog.h"
+#include "qvlayershud.h"
+#include <QListWidget>
+#include <QToolButton>
+#include <QScrollBar>
 #include <QComboBox>
 #include <QSpinBox>
 #include <QCheckBox>
@@ -40,8 +44,8 @@ private slots:
     void testSvgViewport();
     void testExportDialog();
     void testExportCanvasState();
-    void testFiltersDialogWheelStep();
-    void testFilterLayers();
+    void testFilterControlsWheelStep();
+    void testLayersHud();
     void testDialogToggleShortcuts();
 };
 
@@ -49,55 +53,144 @@ ActionManagerTests::ActionManagerTests() { }
 
 ActionManagerTests::~ActionManagerTests() { }
 
-void ActionManagerTests::testFiltersDialogWheelStep()
+void ActionManagerTests::testFilterControlsWheelStep()
 {
-    QVFilters::Settings filters;
-    QVFiltersDialog dialog(filters);
-    auto *brightness = dialog.findChild<QSlider *>("brightnessSlider");
+    QVLayerModel model;
+    const auto id = model.addFilter();
+    QVFiltersDialog controls(&model);
+    auto *brightness = controls.findChild<QSlider *>("brightnessSlider");
     QVERIFY(brightness);
-    QCOMPARE(brightness->value(), 0);
     QWheelEvent wheel(QPointF(10, 10), QPointF(10, 10), QPoint(), QPoint(0, 120),
                       Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
     QApplication::sendEvent(brightness, &wheel);
-    QCOMPARE(brightness->value(), 1);
-    dialog.show();
-    auto *toggle = dialog.findChild<QShortcut *>("filtersToggleShortcut");
+    QCOMPARE(model.stack().layers[0].filter.brightness, 1);
+    auto entry = model.stack().layers[0];
+    entry.name = "Evening";
+    entry.strength = 40;
+    entry.visible = false;
+    entry.filter.hue = 90;
+    model.update(entry);
+    QCOMPARE(controls.findChild<QSlider *>("hueSlider")->value(), 90);
+    QCOMPARE(controls.findChild<QComboBox *>("filterLayerSelector")->currentText(), QString("Evening"));
+    controls.findChild<QPushButton *>("filterResetLayer")->click();
+    QVERIFY(model.stack().layers[0].filter.isNeutral());
+    QCOMPARE(model.stack().layers[0].strength, 40);
+    QVERIFY(!model.stack().layers[0].visible);
+    const auto duplicate = model.duplicate(id);
+    controls.selectLayer(id);
+    model.move(id, 0);
+    brightness->setValue(23);
+    QCOMPARE(model.stack().layers[model.indexOf(id)].filter.brightness, 23);
+    QCOMPARE(model.stack().layers[model.indexOf(duplicate)].filter.brightness, 0);
+    model.remove(id);
+    model.remove(duplicate);
+    QVERIFY(!brightness->isEnabled());
+    controls.findChild<QPushButton *>("filterAddLayer")->click();
+    QVERIFY(brightness->isEnabled());
+    controls.show();
+    auto *toggle = controls.findChild<QShortcut *>("filtersToggleShortcut");
     QVERIFY(toggle);
     QCOMPARE(toggle->key(), QKeySequence(Qt::Key_U));
     QVERIFY(QMetaObject::invokeMethod(toggle, "activated"));
-    QVERIFY(!dialog.isVisible());
+    QVERIFY(!controls.isVisible());
 }
 
-void ActionManagerTests::testFilterLayers()
+void ActionManagerTests::testLayersHud()
 {
-    QVFilters::Settings filters;
-    QVFiltersDialog dialog(filters);
-    auto *layers = dialog.findChild<QComboBox *>("filterLayerSelector");
-    auto *add = dialog.findChild<QPushButton *>("filterAddLayer");
-    auto *remove = dialog.findChild<QPushButton *>("filterRemoveLayer");
-    auto *hue = dialog.findChild<QSlider *>("hueSlider");
-    auto *transparency = dialog.findChild<QSlider *>("transparencySlider");
-    auto *gradient = dialog.findChild<QGroupBox *>("filterGradientGroup");
-    QVERIFY(layers && add && remove && hue && transparency && gradient);
-    QCOMPARE(layers->count(), 1);
-    QVERIFY(!remove->isEnabled());
+    QTemporaryDir directory;
+    QImage image(480, 360, QImage::Format_ARGB32);
+    image.fill(QColor(50, 100, 150));
+    const QString path = directory.filePath("layers.png");
+    QVERIFY(image.save(path));
+    MainWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    struct CloseWindow { MainWindow &window; ~CloseWindow() { window.close(); } } cleanup{ window };
+    window.show();
+    window.openFile(path);
+    auto *canvas = window.findChild<QVGraphicsView *>();
+    QVERIFY(canvas);
+    QTRY_VERIFY(canvas->isMediaLoaded());
+    window.resize(1000, 760);
+    QCoreApplication::processEvents();
+    canvas->zoom(1.7);
+    const QRect viewportGeometry = canvas->viewport()->geometry();
+    const QTransform transform = canvas->transform();
+    const QPointF center = canvas->mapToScene(canvas->viewport()->rect().center());
+    window.activateWindow();
+    QCoreApplication::processEvents();
+    QTest::keyClick(&window, Qt::Key_H);
+    auto *hud = canvas->findChild<QVLayersHud *>();
+    QVERIFY(hud && hud->isVisible());
+    auto *list = canvas->findChild<QListWidget *>("layersList");
+    auto *add = canvas->findChild<QToolButton *>("layersAddFilter");
+    QVERIFY(list && add);
+    QCOMPARE(list->count(), 1);
+    auto *rightPanel = qobject_cast<QVOverlayPanel *>(list->parentWidget());
+    QVERIFY(rightPanel);
+    QCOMPARE(rightPanel->geometry().bottom(), canvas->viewport()->geometry().bottom() - 12);
+    rightPanel->resetPlacement();
+    QCOMPARE(rightPanel->geometry().bottom(), canvas->viewport()->geometry().bottom() - 12);
     add->click();
-    QCOMPARE(layers->count(), 2);
-    QCOMPARE(layers->currentIndex(), 1);
-    QVERIFY(remove->isEnabled());
-    hue->setValue(90);
-    transparency->setValue(60);
-    gradient->setChecked(true);
-    layers->setCurrentIndex(0);
-    QCOMPARE(hue->value(), 0);
-    QCOMPARE(transparency->value(), 0);
-    QVERIFY(!gradient->isChecked());
-    layers->setCurrentIndex(1);
-    QCOMPARE(hue->value(), 90);
-    QCOMPARE(transparency->value(), 60);
-    QVERIFY(gradient->isChecked());
-    remove->click();
-    QCOMPARE(layers->count(), 1);
+    QCOMPARE(list->count(), 2);
+    QVERIFY(!canvas->findChild<QSlider *>("brightnessSlider"));
+    window.showFilters();
+    auto *dialog = window.findChild<QVFiltersDialog *>();
+    QVERIFY(dialog && dialog->isWindow() && dialog->isVisible());
+    auto *brightness = dialog->findChild<QSlider *>("brightnessSlider");
+    brightness->setValue(20);
+    window.showFilters();
+    QVERIFY(!dialog->isVisible());
+    QVERIFY(hud->isVisible());
+    QCOMPARE(canvas->layerModel()->stack().layers[0].filter.brightness, 20);
+    auto *strength = canvas->findChild<QSlider *>("layerStrength");
+    strength->setValue(50);
+    QCOMPARE(canvas->layerModel()->stack().layers[0].strength, 50);
+    list->currentItem()->setText("Warm light");
+    QCOMPARE(canvas->layerModel()->stack().layers[0].name, QString("Warm light"));
+    list->currentItem()->setCheckState(Qt::Unchecked);
+    QVERIFY(!canvas->layerModel()->stack().layers[0].visible);
+    const auto sourceId = canvas->layerModel()->stack().layers[1].id;
+    canvas->layerModel()->move(sourceId, 0);
+    QCOMPARE(list->item(0)->data(Qt::UserRole).toULongLong(), sourceId);
+    QVERIFY(canvas->exportSource().layers.samePixels(canvas->layerModel()->stack()));
+    for (auto *panel : canvas->findChildren<QVOverlayPanel *>()) {
+        QVERIFY(!panel->isWindow());
+        QTest::mousePress(panel, Qt::LeftButton, Qt::NoModifier, QPoint(panel->width()-2, panel->height()-2));
+        QMouseEvent move(QEvent::MouseMove, QPointF(panel->width()+25, panel->height()+25),
+                         QPointF(panel->mapToGlobal(QPoint(panel->width()+25, panel->height()+25))),
+                         Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(panel, &move);
+        QTest::mouseRelease(panel, Qt::LeftButton);
+        QVERIFY(canvas->viewport()->geometry().contains(panel->geometry()));
+    }
+    const auto panels = canvas->findChildren<QVOverlayPanel *>();
+    QVector<QRect> positions;
+    for (auto *panel : panels) positions.append(panel->geometry());
+    const int scrollPosition = canvas->horizontalScrollBar()->value();
+    canvas->horizontalScrollBar()->setValue(scrollPosition + 50);
+    for (int i = 0; i < panels.size(); ++i) QCOMPARE(panels[i]->geometry(), positions[i]);
+    canvas->horizontalScrollBar()->setValue(scrollPosition);
+    hud->toggle();
+    QVERIFY(!hud->isVisible());
+    QCOMPARE(canvas->viewport()->geometry(), viewportGeometry);
+    QCOMPARE(canvas->transform(), transform);
+    QCOMPARE(canvas->mapToScene(canvas->viewport()->rect().center()), center);
+    window.showFilters();
+    QVERIFY(!hud->isVisible());
+    QVERIFY(dialog->isVisible());
+    QCOMPARE(list->count(), 2); // U reuses the existing filter independently of H.
+    window.showFilters();
+    hud->setVisible(true);
+    window.resize(220, 180);
+    QCoreApplication::processEvents();
+    for (auto *panel : canvas->findChildren<QVOverlayPanel *>()) {
+        QVERIFY2(canvas->viewport()->geometry().contains(panel->geometry()),
+                 qPrintable(QString("Viewport %1x%2, panel %3,%4 %5x%6, minimum %7x%8")
+                            .arg(canvas->viewport()->width()).arg(canvas->viewport()->height())
+                            .arg(panel->x()).arg(panel->y()).arg(panel->width()).arg(panel->height())
+                            .arg(panel->minimumWidth()).arg(panel->minimumHeight())));
+    }
+    hud->setVisible(false);
 }
 
 void ActionManagerTests::testDialogToggleShortcuts()
@@ -206,13 +299,13 @@ void ActionManagerTests::testExportCanvasState()
     filters.layers[0].brightness = 15;
     filters.layers[0].contrast = -20;
     filters.layers[0].saturation = 30;
-    canvas.setFilterSettings(filters);
+    canvas.layerModel()->setStack(QVLayers::fromFilters(filters));
     auto source = canvas.exportSource();
     QCOMPARE(source.rotation, 90);
     QVERIFY(source.mirrored);
     QVERIFY(source.flipped);
     QVERIFY(source.loop);
-    QVERIFY(source.filters == filters);
+    QVERIFY(source.layers.samePixels(QVLayers::fromFilters(filters)));
     QVExportDialog dialog(source);
     auto *rotation = dialog.findChild<QCheckBox *>("exportRotate");
     QVERIFY(rotation->isChecked());
@@ -315,6 +408,7 @@ void ActionManagerTests::testPlaybackActionsAndDefaultShortcuts()
     QCOMPARE(defaultShortcuts.value("filters"),
              QStringList(QKeySequence(Qt::Key_U).toString()));
     QVERIFY(defaultShortcuts.value("mute").contains(QKeySequence(Qt::Key_M).toString()));
+    QCOMPARE(defaultShortcuts.value("layers"), QStringList(QKeySequence(Qt::Key_H).toString()));
     QVERIFY(defaultShortcuts.value("loop").contains(QKeySequence(Qt::Key_L).toString()));
     QCOMPARE(defaultShortcuts.value("opencontainingfolder"),
              QStringList(QKeySequence(Qt::Key_E).toString()));
@@ -421,6 +515,13 @@ void ActionManagerTests::testSvgViewport()
 
 int main(int argc, char *argv[])
 {
+    QTemporaryDir settingsDirectory;
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDirectory.path());
+    QCoreApplication::setOrganizationName("qMedia-tests");
+    QCoreApplication::setApplicationName("actionmanagertests");
+    QSettings().setValue("firstlaunch", true);
+    QSettings().setValue("updatenotifications", false);
     QVApplication app(argc, argv);
     ActionManagerTests actionManagerTests;
     return QTest::qExec(&actionManagerTests, argc, argv);

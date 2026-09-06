@@ -4,7 +4,7 @@
 #include "qvimagecore.h"
 #include "qvplaybackloopmode.h"
 #include "qvexport.h"
-#include "qvfilters.h"
+#include "qvlayers.h"
 #include <QGraphicsView>
 #include <QImageReader>
 #include <QMimeData>
@@ -66,8 +66,7 @@ public:
     QString videoErrorString() const;
     QSize currentMediaSize() const;
     QVExport::Source exportSource() const;
-    const QVFilters::Settings &filterSettings() const { return filters; }
-    void setFilterSettings(const QVFilters::Settings &settings);
+    QVLayerModel *layerModel() { return &layers; }
     void reloadVideo();
     void closeVideo();
     void toggleVideoPaused();
@@ -180,7 +179,8 @@ private:
     QPointF canvasCenterRoundingError;
     NavigationCanvasState navigationCanvasState;
     QVPlaybackLoopMode loopMode;
-    QVFilters::Settings filters;
+    QVLayerModel layers{ this };
+    void updateLayerEffects();
 
     constexpr static int MARGIN = -2;
     constexpr static qreal MAX_EXPENSIVE_SCALING_SIZE = 3;

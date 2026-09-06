@@ -8,4 +8,19 @@
         <file>checkmark.png</file>
         <file>qMedia-icon.png</file>
     </qresource>
+    <qresource prefix="/layers">
+        <file alias="close.svg">layers/close.svg</file>
+        <file alias="filter.svg">layers/filter.svg</file>
+        <file alias="duplicate.svg">layers/duplicate.svg</file>
+        <file alias="delete.svg">layers/delete.svg</file>
+        <file alias="up.svg">layers/up.svg</file>
+        <file alias="down.svg">layers/down.svg</file>
+        <file alias="eye.svg">layers/eye.svg</file>
+        <file alias="eye-off.svg">layers/eye-off.svg</file>
+        <file alias="hand.svg">layers/hand.svg</file>
+        <file alias="fit.svg">layers/fit.svg</file>
+        <file alias="export.svg">layers/export.svg</file>
+        <file alias="source.svg">layers/source.svg</file>
+        <file alias="grip.svg">layers/grip.svg</file>
+    </qresource>
 </RCC>

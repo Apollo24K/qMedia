@@ -1,0 +1,91 @@
+#ifndef QVLAYERSHUD_H
+#define QVLAYERSHUD_H
+
+#include "qvlayers.h"
+#include <QFrame>
+
+class QLabel;
+class QLineEdit;
+class QListWidget;
+class QComboBox;
+class QSlider;
+class QSpinBox;
+class QToolButton;
+
+// Floating viewport siblings: QGraphicsView scrolls viewport children with the
+// image. Siblings stay anchored without participating in the canvas layout.
+class QVOverlayPanel : public QFrame
+{
+    Q_OBJECT
+public:
+    QVOverlayPanel(QWidget *viewport, bool resizable, bool right);
+    void setDragHandle(QWidget *handle);
+    void restorePlacement(const QString &key, const QSize &defaultSize);
+    void savePlacement(const QString &key) const;
+    void fitToViewport();
+    void resetPlacement();
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+    bool event(QEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+private:
+    Qt::Edges edgesAt(const QPoint &point) const;
+    void beginDrag(QMouseEvent *event, bool handle);
+    void drag(QMouseEvent *event);
+    void finishDrag();
+    bool resizable;
+    bool defaultRight;
+    QWidget *viewport;
+    bool dragging = false;
+    Qt::Edges resizing;
+    QPoint dragOrigin;
+    QRect dragGeometry;
+    QSize preferredSize;
+    QSize defaultSize;
+    QPoint freePosition;
+    int horizontalAnchor = 0;
+    int verticalAnchor = 1;
+};
+
+class QVLayersHud : public QObject
+{
+    Q_OBJECT
+public:
+    QVLayersHud(QVLayerModel *model, QWidget *viewport);
+    ~QVLayersHud() override;
+    bool isVisible() const;
+    void setVisible(bool visible);
+    void toggle();
+    quint64 selectedLayerId() const { return selectedId(); }
+    void setSource(const QString &name, bool available);
+signals:
+    void filtersRequested(quint64 id);
+    void exportRequested();
+    void resetViewRequested();
+private:
+    void refresh();
+    void select(quint64 id);
+    void loadSelection();
+    void updateSelection();
+    void addFilter();
+    void moveSelection(int offset);
+    quint64 selectedId() const;
+    QVLayerModel *model;
+    QVOverlayPanel *panel;
+    QVOverlayPanel *toolbar;
+    QListWidget *list;
+    QLabel *sourceLabel;
+    QLineEdit *name;
+    QComboBox *blend;
+    QSlider *strength;
+    QSpinBox *strengthValue;
+    QToolButton *removeButton;
+    QToolButton *upButton;
+    QToolButton *downButton;
+    QWidget *properties;
+    bool loading = false;
+};
+
+#endif

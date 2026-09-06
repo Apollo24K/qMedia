@@ -1,7 +1,7 @@
 #ifndef QVFILTEREFFECT_H
 #define QVFILTEREFFECT_H
 
-#include "qvfilters.h"
+#include "qvlayers.h"
 
 #include <QGraphicsEffect>
 #include <QPoint>
@@ -12,15 +12,15 @@ class QVFilterEffect : public QGraphicsEffect
 public:
     explicit QVFilterEffect(QObject *parent = nullptr);
 
-    void setFilterSettings(const QVFilters::Settings &settings);
-    const QVFilters::Settings &filterSettings() const { return settings; }
+    void setLayerStack(const QVLayers::Stack &settings);
+    const QVLayers::Stack &layerStack() const { return settings; }
 
 protected:
     void draw(QPainter *painter) override;
     void sourceChanged(ChangeFlags flags) override;
 
 private:
-    QVFilters::Settings settings;
+    QVLayers::Stack settings;
     bool cacheDirty = true;
     QPoint cachedOffset;
     QPixmap cachedPixmap;

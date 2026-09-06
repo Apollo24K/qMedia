@@ -49,11 +49,9 @@ QString sliderStyle(const QString &gradient)
 }
 }
 
-QVFiltersDialog::QVFiltersDialog(const QVFilters::Settings &initialSettings, QWidget *parent)
-    : QDialog(parent), settings(initialSettings)
+QVFiltersDialog::QVFiltersDialog(QVLayerModel *layerModel, QWidget *parent)
+    : QDialog(parent), model(layerModel)
 {
-    if (settings.layers.isEmpty())
-        settings.layers.append(QVFilters::Layer());
     setWindowTitle(tr("Filters"));
     setWindowModality(Qt::NonModal);
     setMinimumWidth(500);
@@ -139,8 +137,8 @@ QVFiltersDialog::QVFiltersDialog(const QVFilters::Settings &initialSettings, QWi
     }
     connect(gradientGroup, &QGroupBox::toggled, this, &QVFiltersDialog::updateCurrentLayer);
 
+    connect(model, &QVLayerModel::changed, this, &QVFiltersDialog::updateLayerNames);
     updateLayerNames();
-    loadLayer(0);
 }
 
 void QVFiltersDialog::addFilterControl(const QString &label, const QString &objectName,
@@ -167,41 +165,58 @@ void QVFiltersDialog::addFilterControl(const QString &label, const QString &obje
     connect(*slider, &QSlider::valueChanged, this, &QVFiltersDialog::updateCurrentLayer);
 }
 
+quint64 QVFiltersDialog::selectedId() const
+{
+    return layerSelector->currentData().toULongLong();
+}
+
+void QVFiltersDialog::selectLayer(quint64 id)
+{
+    const int index = layerSelector->findData(QVariant::fromValue(id));
+    if (index >= 0) layerSelector->setCurrentIndex(index);
+}
+
 void QVFiltersDialog::updateLayerNames()
 {
-    const int selected = qMax(0, layerSelector->currentIndex());
-    const QSignalBlocker blocker(layerSelector);
-    layerSelector->clear();
-    for (int index = 0; index < settings.layers.size(); ++index)
-        layerSelector->addItem(tr("Layer %1").arg(index + 1));
-    layerSelector->setCurrentIndex(qMin(selected, settings.layers.size() - 1));
-    removeLayerButton->setEnabled(settings.layers.size() > 1);
+    const quint64 selected = selectedId();
+    const int previousIndex = qMax(0, layerSelector->currentIndex());
+    {
+        const QSignalBlocker blocker(layerSelector);
+        layerSelector->clear();
+        for (const auto &layer : model->stack().layers) {
+            if (layer.kind == QVLayers::Kind::Filter)
+                layerSelector->addItem(layer.name, QVariant::fromValue(layer.id));
+        }
+        const int index = layerSelector->findData(QVariant::fromValue(selected));
+        layerSelector->setCurrentIndex(index >= 0 ? index : qMin(previousIndex, layerSelector->count() - 1));
+    }
+    const bool available = layerSelector->count() > 0;
+    removeLayerButton->setEnabled(available);
+    for (auto *slider : { brightnessSlider, contrastSlider, saturationSlider, hueSlider, transparencySlider })
+        slider->setEnabled(available);
+    for (auto *spin : { brightnessSpinBox, contrastSpinBox, saturationSpinBox, hueSpinBox, transparencySpinBox })
+        spin->setEnabled(available);
+    gradientGroup->setEnabled(available);
+    findChild<QPushButton *>("filterResetLayer")->setEnabled(available);
+    loadLayer(layerSelector->currentIndex());
 }
 
 void QVFiltersDialog::addLayer()
 {
-    settings.layers.append(QVFilters::Layer());
-    updateLayerNames();
-    layerSelector->setCurrentIndex(settings.layers.size() - 1);
-    emit filtersChanged(settings);
+    selectLayer(model->addFilter());
 }
 
 void QVFiltersDialog::removeLayer()
 {
-    if (settings.layers.size() <= 1)
-        return;
-    settings.layers.removeAt(layerSelector->currentIndex());
-    updateLayerNames();
-    loadLayer(layerSelector->currentIndex());
-    emit filtersChanged(settings);
+    model->remove(selectedId());
 }
 
 void QVFiltersDialog::loadLayer(int index)
 {
-    if (index < 0 || index >= settings.layers.size())
-        return;
+    const int modelIndex = model->indexOf(layerSelector->itemData(index).toULongLong());
+    if (modelIndex < 0) return;
     loadingLayer = true;
-    const auto &layer = settings.layers[index];
+    const auto &layer = model->stack().layers[modelIndex].filter;
     brightnessSlider->setValue(layer.brightness);
     contrastSlider->setValue(layer.contrast);
     saturationSlider->setValue(layer.saturation);
@@ -217,10 +232,10 @@ void QVFiltersDialog::loadLayer(int index)
 
 void QVFiltersDialog::updateCurrentLayer()
 {
-    const int index = layerSelector->currentIndex();
-    if (loadingLayer || index < 0 || index >= settings.layers.size())
-        return;
-    auto &layer = settings.layers[index];
+    const int index = model->indexOf(selectedId());
+    if (loadingLayer || index < 0) return;
+    auto entry = model->stack().layers[index];
+    auto &layer = entry.filter;
     layer.brightness = brightnessSlider->value();
     layer.contrast = contrastSlider->value();
     layer.saturation = saturationSlider->value();
@@ -231,15 +246,14 @@ void QVFiltersDialog::updateCurrentLayer()
     layer.centerY = centerY->value();
     layer.direction = direction->value();
     layer.softness = softness->value();
-    emit filtersChanged(settings);
+    model->update(entry);
 }
 
 void QVFiltersDialog::resetCurrentLayer()
 {
-    const int index = layerSelector->currentIndex();
-    if (index < 0 || index >= settings.layers.size())
-        return;
-    settings.layers[index] = QVFilters::Layer();
-    loadLayer(index);
-    emit filtersChanged(settings);
+    const int index = model->indexOf(selectedId());
+    if (index < 0) return;
+    auto entry = model->stack().layers[index];
+    entry.filter = QVFilters::Layer();
+    model->update(entry);
 }

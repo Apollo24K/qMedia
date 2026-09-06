@@ -23,6 +23,8 @@ set(TEST_SOURCES
     ../src/qvexport.cpp
     ../src/qvexportdialog.cpp
     ../src/qvfilters.cpp
+    ../src/qvlayers.cpp
+    ../src/qvlayershud.cpp
     ../src/qvfiltereffect.cpp
     ../src/qvfiltersdialog.cpp
     ../src/qvvideoview.cpp
@@ -102,6 +104,12 @@ add_test(NAME SvgHighDpiTests COMMAND actionmanagertests testSvgViewport)
 set_tests_properties(SvgHighDpiTests PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=2")
 
+# Layer compositing and model tests stay independent of widgets and playback.
+add_executable(layerstests tst_layerstests.cpp ../src/qvlayers.cpp ../src/qvfilters.cpp)
+target_include_directories(layerstests PRIVATE ../src)
+target_link_libraries(layerstests PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Gui Qt${QT_VERSION_MAJOR}::Test)
+add_test(NAME LayersTests COMMAND layerstests)
+
 # Media catalog tests stay independent of widgets and image decoding.
 add_executable(mediacatalogtests
     tst_mediacatalogtests.cpp
@@ -124,7 +132,7 @@ target_link_libraries(clipboardtests PRIVATE Qt${QT_VERSION_MAJOR}::Gui
     Qt${QT_VERSION_MAJOR}::Test)
 add_test(NAME ClipboardTests COMMAND clipboardtests)
 
-add_executable(exporttests tst_exporttests.cpp ../src/qvexport.cpp ../src/qvfilters.cpp)
+add_executable(exporttests tst_exporttests.cpp ../src/qvexport.cpp ../src/qvfilters.cpp ../src/qvlayers.cpp)
 target_include_directories(exporttests PRIVATE ../src)
 target_link_libraries(exporttests PRIVATE Qt${QT_VERSION_MAJOR}::Gui Qt${QT_VERSION_MAJOR}::Test)
 add_test(NAME ExportTests COMMAND exporttests)

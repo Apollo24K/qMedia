@@ -3,6 +3,7 @@
 
 #include <QImage>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 namespace QVFilters {
@@ -48,6 +49,8 @@ struct Settings
 
 QImage apply(const QImage &source, const Settings &settings);
 QString ffmpegFilter(const Settings &settings);
+// Unescaped per-channel expressions for embedding in the unified compositor.
+QStringList channelExpressions(const Layer &layer, const QStringList &channels);
 }
 
 #endif // QVFILTERS_H

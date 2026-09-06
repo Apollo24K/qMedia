@@ -76,7 +76,7 @@ QStringList arguments(const QString &input, const QString &output, const Options
     if (rotation == 270) filters << "transpose=cclock";
     if (o.mirrored) filters << "hflip";
     if (o.flipped) filters << "vflip";
-    if (!o.filters.isNeutral()) filters << QVFilters::ffmpegFilter(o.filters);
+    if (!o.layers.isNeutral()) filters << QVLayers::ffmpegFilter(o.layers);
     filters << QString("scale=%1:%2:flags=lanczos").arg(o.size.width()).arg(o.size.height());
     if (o.reverse && !concat) filters << "reverse" << "setpts=PTS-STARTPTS";
     if (!qFuzzyCompare(o.speed, 1.0))
@@ -190,7 +190,7 @@ Result run(const Source &source, const Options &options, const QString &destinat
         frame = frame.transformed(QTransform().rotate(options.rotation))
                         .mirrored(options.mirrored, options.flipped);
         frame = frame.scaled(options.size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-        frame = QVFilters::apply(frame, options.filters);
+        frame = QVLayers::apply(frame, options.layers);
         // Flatten transparency explicitly for formats without an alpha channel.
         if (options.format == "jpeg" || options.format == "bmp") {
             QImage opaque(frame.size(), QImage::Format_RGB32);
@@ -261,6 +261,19 @@ Result run(const Source &source, const Options &options, const QString &destinat
     }
     const QString encoded = temporary.filePath("export." + options.format);
     QStringList args = arguments(input, encoded, options, source.animated);
+    // A layer stack can exceed Windows' command-line limit. Keep long graphs
+    // in the existing export scratch directory for the lifetime of the encoder.
+    for (const QString &option : { QString("-vf"), QString("-filter_complex") }) {
+        const int index = args.indexOf(option);
+        if (index < 0 || args[index + 1].size() < 8192) continue;
+        QFile graph(temporary.filePath("layers.ffgraph"));
+        if (!graph.open(QIODevice::WriteOnly)) return { graph.errorString(), false };
+        const QByteArray contents = args[index + 1].toUtf8();
+        if (graph.write(contents) != contents.size()) return { graph.errorString(), false };
+        graph.close();
+        args[index] = option == "-vf" ? "-filter_script:v" : "-filter_complex_script";
+        args[index + 1] = graph.fileName();
+    }
     if (source.animated) {
         if (options.format == "gif") {
             args.insert(args.size() - 1, "-final_delay");

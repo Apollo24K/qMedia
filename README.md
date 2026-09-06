@@ -19,7 +19,9 @@
 
 qMedia retains qView's lightweight image-viewing workflow while adding mixed-media
 navigation, video playback, synchronized audio, shared canvas controls, and live
-layered color, hue, transparency, and gradient filters.
+layered color, hue, transparency, and gradient filters. Press **H** for the floating
+Layers HUD: reorder, rename, hide, duplicate, and blend source and filter layers
+without changing canvas pan or zoom.
 
 ## Clipboard and URLs
 

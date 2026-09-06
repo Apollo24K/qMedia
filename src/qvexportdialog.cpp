@@ -165,7 +165,7 @@ QVExportDialog::QVExportDialog(const QVExport::Source &source, QWidget *parent)
     reverse->setObjectName("exportReverse");
     reverse->setToolTip(tr("Reverse the entire clip, including audio. Long videos can require substantial memory."));
     form->addRow(QString(), reverse);
-    applyFilters = new QCheckBox(tr("Apply canvas filters"), this);
+    applyFilters = new QCheckBox(tr("Apply canvas layers"), this);
     applyFilters->setObjectName("exportApplyFilters");
     applyFilters->setChecked(true);
     form->addRow(QString(), applyFilters);
@@ -510,7 +510,7 @@ QVExport::Options QVExportDialog::selectedOptions() const
     options.reverse = options.wholeMedia && reverse->isChecked();
     options.speed = options.wholeMedia && source.video ? speed->value() : 1.0;
     if (applyFilters->isChecked())
-        options.filters = source.filters;
+        options.layers = source.layers;
     return options;
 }
 
