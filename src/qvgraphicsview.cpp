@@ -6,6 +6,8 @@
 #include "qvcocoafunctions.h"
 #include "settingsmanager.h"
 #include <QWheelEvent>
+#include <QPainter>
+#include <QLineF>
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
 #include <QGraphicsVideoItem>
@@ -16,6 +18,7 @@
 #include <QGestureEvent>
 #include <QScrollBar>
 #include <QElapsedTimer>
+#include <QBuffer>
 
 QVExport::Source QVGraphicsView::exportSource() const
 {
@@ -53,6 +56,10 @@ QVExport::Source QVGraphicsView::exportSource() const
                 && imageCore.currentAnimationLoopsByDefault());
     source.muted = source.video && isVideoMuted();
     source.layers = layers.stack();
+    if (source.path.isEmpty() && source.layers.hasDistortion() && !source.frame.isNull()) {
+        source.frame = source.frame.transformed(QTransform().rotate(-source.rotation));
+        source.size = source.frame.size();
+    }
     return source;
 }
 
@@ -174,11 +181,24 @@ void QVGraphicsView::enterEvent(QEnterEvent *event)
 #endif
 {
     QGraphicsView::enterEvent(event);
-    viewport()->setCursor(Qt::ArrowCursor);
+    viewport()->setCursor(distortActive ? Qt::CrossCursor : Qt::ArrowCursor);
 }
 
 void QVGraphicsView::mousePressEvent(QMouseEvent *event)
 {
+    if (distortActive && event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier) {
+        if (canDistort() && !compareOriginal && loadedPixmapItem->contains(loadedPixmapItem->mapFromScene(mapToScene(event->pos())))) {
+            distortDragging = true;
+            strokeLayer = 0;
+            strokeStart = distortPoint(event->pos());
+            const QRectF bounds = loadedPixmapItem->boundingRect();
+            const QPointF a = loadedPixmapItem->mapFromScene(mapToScene(event->pos()));
+            const QPointF b = loadedPixmapItem->mapFromScene(mapToScene(event->pos() + QPoint(distortRadius, 0)));
+            strokeRadius = QLineF(a, b).length() / qMin(bounds.width(), bounds.height());
+        }
+        event->accept();
+        return;
+    }
     if (event->button() == Qt::BackButton) {
         goToFile(GoToFileMode::previous);
         return;
@@ -248,6 +268,7 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
 
 void QVGraphicsView::mouseDoubleClickEvent(QMouseEvent *event)
 {
+    if (distortActive && event->button() == Qt::LeftButton) { mousePressEvent(event); return; }
     if (event->button() == Qt::LeftButton) {
         emit fullscreenRequested();
         return;
@@ -257,6 +278,22 @@ void QVGraphicsView::mouseDoubleClickEvent(QMouseEvent *event)
 
 void QVGraphicsView::mouseMoveEvent(QMouseEvent *event)
 {
+    if (distortActive) {
+        distortPosition = mapToScene(event->pos());
+        distortHover = true;
+        viewport()->update();
+        if (distortDragging) {
+            if (event->buttons().testFlag(Qt::LeftButton)) continueDistort(event->pos());
+            else distortDragging = false;
+            event->accept();
+            return;
+        }
+        if (event->buttons() == Qt::NoButton) {
+            viewport()->setCursor(Qt::CrossCursor);
+            event->accept();
+            return;
+        }
+    }
     if (mousePressButton == Qt::LeftButton) {
         if (mousePressModifiers.testFlag(Qt::ControlModifier)
             && !event->modifiers().testFlag(Qt::ControlModifier)) {
@@ -276,6 +313,12 @@ void QVGraphicsView::mouseMoveEvent(QMouseEvent *event)
 
 void QVGraphicsView::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (distortDragging && event->button() == Qt::LeftButton) {
+        continueDistort(event->pos());
+        distortDragging = false;
+        event->accept();
+        return;
+    }
     mousePressButton = Qt::NoButton;
     mousePressModifiers = Qt::NoModifier;
     QGraphicsView::mouseReleaseEvent(event);
@@ -284,6 +327,8 @@ void QVGraphicsView::mouseReleaseEvent(QMouseEvent *event)
 
 bool QVGraphicsView::event(QEvent *event)
 {
+    if (event->type() == QEvent::WindowDeactivate || event->type() == QEvent::FocusOut
+            || event->type() == QEvent::Hide) distortDragging = false;
     // this is for touchpad pinch gestures
     if (event->type() == QEvent::Gesture) {
         auto *gestureEvent = static_cast<QGestureEvent *>(event);
@@ -321,6 +366,12 @@ bool QVGraphicsView::event(QEvent *event)
 
 void QVGraphicsView::wheelEvent(QWheelEvent *event)
 {
+    if (distortActive && event->modifiers().testFlag(Qt::AltModifier)) {
+        if (!distortDragging) setDistortRadius(distortRadius + (event->angleDelta().y() > 0 ? 4 : -4));
+        event->accept();
+        return;
+    }
+    if (distortDragging) { event->accept(); return; }
 #if (QT_VERSION >= QT_VERSION_CHECK(5, 14, 0))
     const QPoint eventPos = event->position().toPoint();
 #else
@@ -393,9 +444,27 @@ QMimeData *QVGraphicsView::getMimeData() const
     if (!getImageDetails().isPixmapLoaded)
         return mimeData;
 
-    mimeData->setUrls(
-            { QUrl::fromLocalFile(imageCore.getCurrentMedia().fileInfo.absoluteFilePath()) });
-    mimeData->setImageData(imageCore.getLoadedPixmap().toImage());
+    const int rotation = imageCore.getCurrentRotation();
+    const bool mirrored = transform().m11() < 0;
+    const bool flipped = transform().m22() < 0;
+    // Use native decoded pixels, not the zoom-resampled viewport pixmap.
+    QImage image = getImageDetails().isMovieLoaded
+            ? getLoadedMovie().currentImage().transformed(QTransform().rotate(rotation))
+            : imageCore.getLoadedPixmap().toImage();
+    if (image.isNull()) return mimeData;
+    image = QVLayers::apply(image, QVLayers::rotated(layers.stack(), rotation));
+    image = image.mirrored(mirrored, flipped);
+    image.setDevicePixelRatio(1.0);
+    const bool edited = !layers.stack().isNeutral() || rotation != 0 || mirrored || flipped;
+    // A source URL would make many paste targets reopen the unedited file instead.
+    // Keep file/animation copying for unchanged media only.
+    const QString path = imageCore.getCurrentMedia().fileInfo.absoluteFilePath();
+    if (!edited && !path.isEmpty()) mimeData->setUrls({ QUrl::fromLocalFile(path) });
+    mimeData->setImageData(image);
+    QByteArray png;
+    QBuffer buffer(&png);
+    if (buffer.open(QIODevice::WriteOnly) && image.save(&buffer, "PNG"))
+        mimeData->setData("image/png", png);
     return mimeData;
 }
 
@@ -445,6 +514,9 @@ void QVGraphicsView::loadFile(const QString &fileName)
 
     const auto mediaType = imageCore.mediaTypeForFile(fileInfo);
     if (mediaType == QVMediaCatalog::MediaType::Video) {
+        setDistortActive(false);
+        layers.clearDistortions();
+        distortSource.clear();
         resetCanvasForNewMedia();
         videoNativeSize = QSize();
         videoLayoutSize = QSize();
@@ -492,6 +564,12 @@ void QVGraphicsView::reloadFile()
 
 void QVGraphicsView::postLoad()
 {
+    const QString path = getCurrentMedia().fileInfo.absoluteFilePath();
+    if (path != distortSource) {
+        setDistortActive(false);
+        layers.clearDistortions();
+        distortSource = path;
+    }
     updateLoadedPixmapItem();
     qvApp->getActionManager().addFileToRecentsList(getCurrentMedia().fileInfo);
 
@@ -510,6 +588,7 @@ void QVGraphicsView::zoomOut(const QPoint &pos)
 
 void QVGraphicsView::zoom(qreal scaleFactor, const QPoint &pos)
 {
+    distortDragging = false;
     restoreCenterAfterExpensiveScale = false;
     canvasCenterRoundingError = QPointF();
 
@@ -669,6 +748,7 @@ void QVGraphicsView::updateLoadedPixmapItem()
 
     activateImageCanvas();
 
+    updateLayerEffects();
     // set pixmap and offset
     loadedPixmapItem->setPixmap(getLoadedPixmap());
     scaledSize = loadedPixmapItem->boundingRect().size().toSize();
@@ -696,6 +776,7 @@ void QVGraphicsView::resetScale()
 
 void QVGraphicsView::resetView()
 {
+    distortDragging = false;
     // An in-flight navigation must not restore the view the user just reset.
     navigationCanvasState.valid = false;
     resetCanvasForNewMedia();
@@ -1014,8 +1095,109 @@ void QVGraphicsView::ensureVideoView()
     connect(videoView, &QVVideoView::errorOccurred, this, &QVGraphicsView::videoErrorOccurred);
 }
 
+bool QVGraphicsView::canDistort() const
+{
+    return !videoCanvasActive && getImageDetails().isPixmapLoaded
+            && !getImageDetails().isMovieLoaded && !imageCore.isLoadInProgress();
+}
+
+void QVGraphicsView::setDistortActive(bool active)
+{
+    distortActive = active && canDistort();
+    distortDragging = false;
+    distortHover = false;
+    viewport()->setMouseTracking(distortActive);
+    if (distortActive) setFocus();
+    viewport()->setCursor(distortActive ? Qt::CrossCursor : Qt::ArrowCursor);
+    viewport()->update();
+}
+
+void QVGraphicsView::undoDistort()
+{
+    if (!distortActive) return;
+    quint64 id = distortDragging && strokeLayer ? strokeLayer : selectedDistortLayer;
+    const int index = layers.indexOf(id);
+    if (index < 0 || layers.stack().layers[index].kind != QVLayers::Kind::Distort) id = strokeLayer;
+    distortDragging = false;
+    layers.undoDistort(id);
+}
+
+void QVGraphicsView::setDistortRadius(int radius)
+{
+    distortRadius = qBound(8, radius, 200);
+    viewport()->update();
+    emit distortRadiusChanged(distortRadius);
+}
+
+QPointF QVGraphicsView::distortPoint(const QPoint &position) const
+{
+    const QRectF bounds = loadedPixmapItem->boundingRect();
+    const QPointF point = loadedPixmapItem->mapFromScene(mapToScene(position));
+    return QVLayers::rotatePoint(QPointF(point.x()/bounds.width(), point.y()/bounds.height()),
+                                 -imageCore.getCurrentRotation());
+}
+
+void QVGraphicsView::continueDistort(const QPoint &position)
+{
+    if (!canDistort() || compareOriginal) { distortDragging = false; return; }
+    const QPointF point = distortPoint(position);
+    if (!QRectF(0, 0, 1, 1).contains(point)) { distortDragging = false; return; }
+    int index = layers.indexOf(strokeLayer);
+    QPointF previous = index >= 0 && !layers.stack().layers[index].strokes.isEmpty()
+            ? layers.stack().layers[index].strokes.last().points.last() : strokeStart;
+    if (QLineF(previous, point).length() < strokeRadius * 0.025) return;
+    if (!strokeLayer) {
+        index = layers.indexOf(selectedDistortLayer);
+        if (index >= 0 && layers.stack().layers[index].kind == QVLayers::Kind::Distort
+                && layers.stack().layers[index].visible && layers.stack().layers[index].strength > 0) {
+            strokeLayer = selectedDistortLayer;
+        } else {
+            strokeLayer = layers.addDistort(index >= 0 ? index : 0);
+            selectedDistortLayer = strokeLayer;
+            emit distortLayerCreated(strokeLayer);
+        }
+        index = layers.indexOf(strokeLayer);
+        auto layer = layers.stack().layers[index];
+        QVLayers::DistortStroke stroke;
+        stroke.radius = strokeRadius;
+        stroke.points = { strokeStart, point };
+        layer.strokes.append(stroke);
+        layers.update(layer);
+    } else if (index >= 0 && !layers.stack().layers[index].strokes.isEmpty()) {
+        auto layer = layers.stack().layers[index];
+        layer.strokes.last().points.append(point);
+        layers.update(layer);
+    } else {
+        distortDragging = false;
+    }
+}
+
+void QVGraphicsView::drawForeground(QPainter *painter, const QRectF &rect)
+{
+    QGraphicsView::drawForeground(painter, rect);
+    if (!distortActive || !distortHover || compareOriginal) return;
+    painter->save();
+    const QPoint center = mapFromScene(distortPosition);
+    painter->resetTransform();
+    painter->setRenderHint(QPainter::Antialiasing);
+    painter->setBrush(Qt::NoBrush);
+    painter->setPen(QPen(QColor(0, 0, 0, 170), 3));
+    painter->drawEllipse(center, distortRadius, distortRadius);
+    painter->setPen(QPen(QColor(255, 255, 255, 220), 1));
+    painter->drawEllipse(center, distortRadius, distortRadius);
+    painter->restore();
+}
+
+void QVGraphicsView::leaveEvent(QEvent *event)
+{
+    distortHover = false;
+    viewport()->update();
+    QGraphicsView::leaveEvent(event);
+}
+
 void QVGraphicsView::setCompareOriginal(bool enabled)
 {
+    if (enabled) distortDragging = false;
     if (compareOriginal == enabled) return;
     compareOriginal = enabled;
     updateLayerEffects();
@@ -1033,7 +1215,7 @@ void QVGraphicsView::updateLayerEffects()
             effect = new QVFilterEffect();
             item->setGraphicsEffect(effect);
         }
-        effect->setLayerStack(layers.stack());
+        effect->setLayerStack(QVLayers::rotated(layers.stack(), videoCanvasActive ? 0 : imageCore.getCurrentRotation()));
         effect->setCompareOriginal(compareOriginal);
     };
     updateEffect(loadedPixmapItem);
@@ -1285,6 +1467,9 @@ void QVGraphicsView::toggleVideoPaused()
 
 void QVGraphicsView::closeImage()
 {
+    setDistortActive(false);
+    layers.clearDistortions();
+    distortSource.clear();
     ++mediaRequestGeneration;
     navigationCanvasState.valid = false;
     restoreCenterAfterExpensiveScale = false;
@@ -1367,6 +1552,7 @@ void QVGraphicsView::togglePlaybackLoopMode()
 
 void QVGraphicsView::rotateImage(int rotation)
 {
+    distortDragging = false;
     if (!videoCanvasActive) {
         imageCore.rotateImage(rotation);
         return;

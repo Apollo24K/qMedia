@@ -183,6 +183,8 @@ void ShortcutManager::initializeShortcutsList()
                            {} });
     shortcutsList.append({ tr("Compare Original (hold)"), "compareoriginal",
                            { QKeySequence(Qt::Key_C).toString() }, {} });
+    shortcutsList.append({ tr("Distort (hold when HUD is hidden)"), "distort",
+                           { QKeySequence(Qt::Key_D).toString() }, {} });
     shortcutsList.append({ tr("Layers HUD"),
                            "layers",
                            QStringList(QKeySequence(Qt::Key_H).toString()),

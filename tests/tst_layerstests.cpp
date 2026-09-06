@@ -8,11 +8,61 @@ class LayersTests : public QObject
 {
     Q_OBJECT
 private slots:
+    void distortion();
     void sourceAndAdjustment();
     void blendModes();
     void modelEdits();
     void ffmpegMatchesComposite();
 };
+
+void LayersTests::distortion()
+{
+    QImage source(80, 60, QImage::Format_ARGB32);
+    for (int y = 0; y < source.height(); ++y)
+        for (int x = 0; x < source.width(); ++x) source.setPixel(x, y, qRgba(x * 3, y * 4, 80, 255));
+    QVLayerModel model;
+    const auto id = model.addDistort();
+    QVERIFY(model.stack().isNeutral());
+    auto layer = model.stack().layers[0];
+    QVLayers::DistortStroke stroke;
+    stroke.radius = 0.25;
+    stroke.points = { QPointF(0.4, 0.5), QPointF(0.55, 0.5) };
+    layer.strokes.append(stroke);
+    model.update(layer);
+    const auto stack = model.stack();
+    QVERIFY(stack.hasDistortion());
+    const auto result = QVLayers::apply(source, stack);
+    QVERIFY(result.pixelColor(43, 30).red() < source.pixelColor(43, 30).red());
+    QCOMPARE(result.pixelColor(3, 3), source.pixelColor(3, 3));
+    QCOMPARE(source.pixelColor(43, 30), QColor(129, 120, 80));
+    layer.visible = false;
+    model.update(layer);
+    QCOMPARE(QVLayers::apply(source, model.stack()), source);
+    layer.visible = true;
+    layer.strength = 0;
+    model.update(layer);
+    QCOMPARE(QVLayers::apply(source, model.stack()), source);
+    layer.strength = 100;
+    model.update(layer);
+    const auto copy = model.duplicate(id);
+    model.undoDistort(id);
+    QCOMPARE(model.stack().layers[model.indexOf(copy)].strokes.size(), 1);
+    QVERIFY(model.stack().layers[model.indexOf(id)].strokes.isEmpty());
+    model.clearDistortions();
+    QVERIFY(model.stack().isNeutral());
+    QCOMPARE(model.stack().layers.size(), 1);
+    const auto rotated = QVLayers::apply(source.transformed(QTransform().rotate(90)), QVLayers::rotated(stack, 90));
+    const auto expected = result.transformed(QTransform().rotate(90));
+    QCOMPARE(rotated.size(), expected.size());
+    for (int y = 0; y < rotated.height(); ++y)
+        for (int x = 0; x < rotated.width(); ++x) {
+            QVERIFY(qAbs(rotated.pixelColor(x, y).red() - expected.pixelColor(x, y).red()) <= 2);
+            QVERIFY(qAbs(rotated.pixelColor(x, y).green() - expected.pixelColor(x, y).green()) <= 2);
+        }
+    // Transparent pixels must not bleed hidden RGB into the warped edge.
+    source.fill(qRgba(255, 0, 0, 0));
+    QCOMPARE(QVLayers::apply(source, stack).pixelColor(43, 30).alpha(), 0);
+}
 
 void LayersTests::sourceAndAdjustment()
 {

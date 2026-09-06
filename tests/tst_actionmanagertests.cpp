@@ -6,6 +6,7 @@
 #include "qvexportdialog.h"
 #include "qvfiltersdialog.h"
 #include "qvlayershud.h"
+#include <QTableWidget>
 #include <QListWidget>
 #include <QToolButton>
 #include <QScrollBar>
@@ -25,6 +26,9 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QApplication>
+#include <QClipboard>
+#include <QMimeData>
+#include "qvclipboard.h"
 #include <QSlider>
 #include <QWheelEvent>
 #include <QGroupBox>
@@ -46,12 +50,17 @@ private slots:
     void testCanvasActionsSupportAllVisualMedia();
     void testPlaybackActionsAndDefaultShortcuts();
     void testMediaBackendSetting();
+    void testShortcutSearch();
     void testImageRequestAfterVideoIsNotDiscarded();
     void testSvgViewport();
     void testExportDialog();
     void testExportCanvasState();
     void testFilterControlsWheelStep();
     void testHoldCompare();
+    void testDistortTool();
+    void testDistortShortcut();
+    void testCanvasCopy();
+    void testDistortCache();
     void testLayersHud();
     void testLayersHudCursor();
     void testDialogToggleShortcuts();
@@ -101,6 +110,62 @@ void ActionManagerTests::testFilterControlsWheelStep()
     QCOMPARE(toggle->key(), QKeySequence(Qt::Key_U));
     QVERIFY(QMetaObject::invokeMethod(toggle, "activated"));
     QVERIFY(!controls.isVisible());
+}
+
+void ActionManagerTests::testShortcutSearch()
+{
+    QVOptionsDialog options;
+    options.setAttribute(Qt::WA_DeleteOnClose, false);
+    auto *search = options.findChild<QLineEdit *>("shortcutsSearch");
+    auto *mode = options.findChild<QComboBox *>("shortcutsSearchMode");
+    auto *table = options.findChild<QTableWidget *>("shortcutsTable");
+    QVERIFY(search && mode && table);
+    const auto shortcuts = qvApp->getShortcutManager().getShortcutsList();
+    const auto rowFor = [&](const QString &name) {
+        for (int row = 0; row < shortcuts.size(); ++row)
+            if (shortcuts[row].name == name) return row;
+        return -1;
+    };
+    const int compare = rowFor("compareoriginal");
+    const int copy = rowFor("copy");
+    const int background = rowFor("togglewhitebackground");
+    QVERIFY(compare >= 0);
+    QVERIFY(copy >= 0);
+    QVERIFY(background >= 0);
+    search->setText(" c ");
+    QVERIFY(!table->isRowHidden(background));
+    mode->setCurrentIndex(2);
+    QVERIFY(!table->isRowHidden(compare));
+    QVERIFY(!table->isRowHidden(copy));
+    QVERIFY(table->isRowHidden(background));
+    const auto copyKeys = ShortcutManager::stringListToKeySequenceList(shortcuts[copy].shortcuts);
+    QVERIFY(!copyKeys.isEmpty());
+    search->setText(copyKeys.first().toString(QKeySequence::NativeText));
+    QVERIFY(!table->isRowHidden(copy));
+    QVERIFY(table->isRowHidden(compare));
+    search->setText("not a key");
+    for (int row = 0; row < table->rowCount(); ++row) QVERIFY(table->isRowHidden(row));
+    mode->setCurrentIndex(1);
+    search->setText("COMPARE ORIGINAL");
+    QVERIFY(!table->isRowHidden(compare));
+    QVERIFY(table->isRowHidden(copy));
+    search->clear();
+    for (int row = 0; row < table->rowCount(); ++row) QVERIFY(!table->isRowHidden(row));
+
+    // Language selection already exists on the Miscellaneous page.
+    auto *categories = options.findChild<QListWidget *>("categoryList");
+    auto *languages = options.findChild<QComboBox *>("langComboBox");
+    QVERIFY(categories && languages);
+    categories->setCurrentRow(2);
+    QVERIFY(languages->isVisibleTo(&options));
+    QVERIFY(languages->findData("system") >= 0);
+    QVERIFY(languages->findData("en") >= 0);
+    // This test target may omit translation resources; validate any it includes.
+    for (int index = 2; index < languages->count(); ++index) {
+        const QString locale = languages->itemData(index).toString();
+        QVERIFY(!locale.startsWith('_'));
+        QVERIFY(QLocale(locale).language() != QLocale::C);
+    }
 }
 
 void ActionManagerTests::testHoldCompare()
@@ -198,6 +263,245 @@ void ActionManagerTests::testHoldCompare()
     QCOMPARE(render().pixelColor(20, 20), original.pixelColor(20, 20));
     effect->setCompareOriginal(false);
     QCOMPARE(render(), edited);
+}
+
+void ActionManagerTests::testDistortShortcut()
+{
+    QTemporaryDir directory;
+    QImage image(400, 300, QImage::Format_ARGB32);
+    image.fill(Qt::gray);
+    const QString path = directory.filePath("shortcut.png");
+    QVERIFY(image.save(path));
+    MainWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    struct CloseWindow { MainWindow &window; ~CloseWindow() { window.close(); } } cleanup{window};
+    window.show();
+    window.openFile(path);
+    auto *canvas = window.findChild<QVGraphicsView *>();
+    QTRY_VERIFY(canvas->canDistort());
+    QVERIFY(!canvas->findChild<QVLayersHud *>());
+    QTest::keyPress(canvas, Qt::Key_D);
+    QVERIFY(canvas->isDistortActive());
+    QKeyEvent repeatRelease(QEvent::KeyRelease, Qt::Key_D, Qt::NoModifier, "d", true);
+    QApplication::sendEvent(canvas, &repeatRelease);
+    QVERIFY(canvas->isDistortActive());
+    QKeyEvent repeatPress(QEvent::KeyPress, Qt::Key_D, Qt::NoModifier, "d", true);
+    QApplication::sendEvent(canvas, &repeatPress);
+    QVERIFY(canvas->isDistortActive());
+    QTest::keyRelease(&window, Qt::Key_D);
+    QVERIFY(!canvas->isDistortActive());
+    QVERIFY(!canvas->findChild<QVLayersHud *>()); // Holding D never opens the HUD.
+    QTest::keyPress(canvas, Qt::Key_D);
+    QEvent deactivate(QEvent::WindowDeactivate);
+    QApplication::sendEvent(&window, &deactivate);
+    QVERIFY(!canvas->isDistortActive());
+    QApplication::sendEvent(canvas, &repeatPress);
+    QVERIFY(!canvas->isDistortActive());
+    QTest::keyRelease(canvas, Qt::Key_D);
+
+    window.toggleLayers();
+    auto *tool = canvas->findChild<QToolButton *>("layersDistort");
+    auto *pan = canvas->findChild<QToolButton *>("layersPan");
+    QVERIFY(tool && pan);
+    QTest::keyClick(canvas, Qt::Key_D);
+    QVERIFY(canvas->isDistortActive());
+    QVERIFY(tool->isChecked());
+    QTest::keyClick(canvas, Qt::Key_D); // Select, not toggle.
+    QVERIFY(canvas->isDistortActive());
+    pan->click();
+    QVERIFY(!canvas->isDistortActive());
+    QLineEdit editor(&window);
+    QTest::keyClick(&editor, Qt::Key_D);
+    QCOMPARE(editor.text(), QString("d"));
+    QVERIFY(!canvas->isDistortActive());
+    window.toggleLayers();
+    QTest::keyPress(canvas, Qt::Key_D);
+    QVERIFY(canvas->isDistortActive());
+    QTest::keyRelease(canvas, Qt::Key_D);
+    QVERIFY(!canvas->isDistortActive());
+    QVERIFY(pan->isChecked());
+
+    QSettings().setValue("shortcuts/distort", QStringList{"Shift+D"});
+    qvApp->getShortcutManager().updateShortcuts();
+    struct ResetShortcut {
+        ~ResetShortcut() {
+            QSettings().remove("shortcuts/distort");
+            qvApp->getShortcutManager().updateShortcuts();
+        }
+    } resetShortcut;
+    QTest::keyPress(canvas, Qt::Key_D);
+    QVERIFY(!canvas->isDistortActive());
+    QTest::keyRelease(canvas, Qt::Key_D);
+    QTest::keyPress(canvas, Qt::Key_D, Qt::ShiftModifier);
+    QVERIFY(canvas->isDistortActive());
+    QTest::keyRelease(canvas, Qt::Key_D);
+    QVERIFY(!canvas->isDistortActive());
+}
+
+void ActionManagerTests::testCanvasCopy()
+{
+    QTemporaryDir directory;
+    QImage original(80, 60, QImage::Format_ARGB32);
+    for (int y = 0; y < 60; ++y)
+        for (int x = 0; x < 80; ++x) original.setPixel(x, y, qRgba(x*3, y*4, 90, 180));
+    const QString path = directory.filePath("copy.png");
+    QVERIFY(original.save(path));
+    MainWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    struct CloseWindow { MainWindow &window; ~CloseWindow() { window.close(); } } cleanup{window};
+    window.show();
+    window.openFile(path);
+    auto *canvas = window.findChild<QVGraphicsView *>();
+    QTRY_VERIFY(canvas->canDistort());
+    QScopedPointer<QMimeData> unchanged(canvas->getMimeData());
+    QVERIFY(unchanged->hasUrls());
+    QCOMPARE(qvariant_cast<QImage>(unchanged->imageData()).size(), original.size());
+    auto *model = canvas->layerModel();
+    model->addFilter();
+    auto filter = model->stack().layers[0];
+    filter.filter.brightness = 15;
+    model->update(filter);
+    model->addDistort();
+    auto layer = model->stack().layers[0];
+    QVLayers::DistortStroke stroke;
+    stroke.radius = 0.25;
+    stroke.points = { QPointF(0.4, 0.5), QPointF(0.55, 0.5) };
+    layer.strokes = {stroke};
+    model->update(layer);
+    canvas->rotateImage(90);
+    window.mirror();
+    canvas->zoom(1.7);
+    QVERIFY(canvas->transform().m11() < 0);
+    const auto viewTransform = canvas->transform();
+    const auto center = canvas->mapToScene(canvas->viewport()->rect().center());
+    const auto expected = QVLayers::apply(canvas->getLoadedPixmap().toImage(), QVLayers::rotated(model->stack(), 90))
+            .mirrored(true, false);
+    canvas->setCompareOriginal(true);
+    QScopedPointer<QMimeData> edited(canvas->getMimeData());
+    QVERIFY(edited->hasImage());
+    QVERIFY(!edited->hasUrls());
+    QCOMPARE(qvariant_cast<QImage>(edited->imageData()), expected);
+    QCOMPARE(QImage::fromData(edited->data("image/png")), expected);
+    const auto pasted = QVClipboard::read(*edited);
+    QVERIFY(pasted.urls.isEmpty());
+    QCOMPARE(QImage::fromData(pasted.bytes), expected);
+    window.copy();
+    QCOMPARE(QApplication::clipboard()->image(), expected);
+    QVERIFY(!QApplication::clipboard()->mimeData()->hasUrls());
+    QCOMPARE(canvas->transform(), viewTransform);
+    QCOMPARE(canvas->mapToScene(canvas->viewport()->rect().center()), center);
+    canvas->setCompareOriginal(false);
+}
+
+void ActionManagerTests::testDistortCache()
+{
+    QImage source(80, 60, QImage::Format_ARGB32);
+    for (int y = 0; y < 60; ++y)
+        for (int x = 0; x < 80; ++x) source.setPixel(x, y, qRgb(x*3, y*4, 80));
+    QGraphicsScene scene;
+    auto *item = scene.addPixmap(QPixmap::fromImage(source));
+    auto *effect = new QVFilterEffect;
+    item->setGraphicsEffect(effect);
+    QVLayers::Stack stack;
+    QVLayers::Layer layer;
+    layer.kind = QVLayers::Kind::Distort;
+    QVLayers::DistortStroke stroke;
+    stroke.radius = 0.2;
+    stroke.points = { QPointF(0.35, 0.5), QPointF(0.45, 0.5) };
+    layer.strokes = { stroke };
+    stack.layers.prepend(layer);
+    const auto check = [&]() {
+        effect->setLayerStack(stack);
+        QImage rendered(source.size(), QImage::Format_ARGB32);
+        rendered.fill(Qt::transparent);
+        QPainter painter(&rendered);
+        scene.render(&painter, QRectF(source.rect()), QRectF(source.rect()));
+        painter.end();
+        QCOMPARE(rendered, QVLayers::apply(source, stack));
+    };
+    check();
+    stack.layers[0].strokes[0].points.append(QPointF(0.55, 0.5));
+    check(); // Extend the in-progress stroke through the incremental cache.
+    stack.layers[0].strokes.append(stroke);
+    check(); // New stroke.
+    stack.layers[0].strokes.removeLast();
+    check(); // Undo invalidates the cache.
+    stack.layers[0].strength = 50;
+    check(); // Partial-strength layers use a complete composite.
+    stack.layers[0].strokes[0].points.append(QPointF(0.6, 0.55));
+    check();
+}
+
+void ActionManagerTests::testDistortTool()
+{
+    QTemporaryDir directory;
+    QImage image(400, 300, QImage::Format_ARGB32);
+    image.fill(QColor(80, 120, 160));
+    const QString path = directory.filePath("distort.png");
+    const QString next = directory.filePath("next.png");
+    QVERIFY(image.save(path));
+    QVERIFY(image.save(next));
+    MainWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    struct CloseWindow { MainWindow &window; ~CloseWindow() { window.close(); } } cleanup{window};
+    window.show();
+    window.openFile(path);
+    auto *canvas = window.findChild<QVGraphicsView *>();
+    QTRY_VERIFY(canvas->canDistort());
+    window.toggleLayers();
+    auto *tool = canvas->findChild<QToolButton *>("layersDistort");
+    auto *pan = canvas->findChild<QToolButton *>("layersPan");
+    QVERIFY(tool && pan && tool->isEnabled());
+    tool->click();
+    QVERIFY(canvas->isDistortActive());
+    const auto transform = canvas->transform();
+    const auto center = canvas->mapToScene(canvas->viewport()->rect().center());
+    const QPoint start = canvas->viewport()->rect().center();
+    const QPoint end = start + QPoint(24, 0);
+    QTest::mousePress(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, start);
+    QMouseEvent move(QEvent::MouseMove, QPointF(end), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas->viewport(), &move);
+    QTest::mouseRelease(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, end);
+    QVERIFY(canvas->layerModel()->stack().hasDistortion());
+    QCOMPARE(canvas->layerModel()->stack().layers[0].strokes.size(), 1);
+    // Text editors retain their own undo even with the Distort tool active.
+    QLineEdit editor(&window);
+    QTest::keyClicks(&editor, "abc");
+    QTest::keyClick(&editor, Qt::Key_Z, Qt::ControlModifier);
+    QCOMPARE(editor.text(), QString());
+    QCOMPARE(canvas->layerModel()->stack().layers[0].strokes.size(), 1);
+    QTest::keyClick(canvas, Qt::Key_Z, Qt::ControlModifier);
+    QVERIFY(canvas->layerModel()->stack().layers[0].strokes.isEmpty());
+    QTest::mousePress(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, start);
+    QApplication::sendEvent(canvas->viewport(), &move);
+    QTest::mouseRelease(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, end);
+    QCOMPARE(canvas->layerModel()->stack().layers[0].strokes.size(), 1);
+    QKeyEvent repeatUndo(QEvent::KeyPress, Qt::Key_Z, Qt::ControlModifier, QString(), true);
+    QApplication::sendEvent(canvas, &repeatUndo);
+    QCOMPARE(canvas->layerModel()->stack().layers[0].strokes.size(), 1);
+    QCOMPARE(canvas->transform(), transform);
+    QCOMPARE(canvas->mapToScene(canvas->viewport()->rect().center()), center);
+    QTest::keyPress(canvas, Qt::Key_C);
+    QVERIFY(canvas->isComparingOriginal());
+    QTest::keyRelease(canvas, Qt::Key_C);
+    QVERIFY(!canvas->isComparingOriginal());
+    auto *size = canvas->findChild<QSlider *>("distortBrushSize");
+    QVERIFY(size);
+    QWheelEvent wheel(QPointF(start), QPointF(canvas->viewport()->mapToGlobal(start)), QPoint(), QPoint(0, 120),
+                      Qt::NoButton, Qt::AltModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(canvas->viewport(), &wheel);
+    QCOMPARE(size->value(), 52);
+    QCOMPARE(canvas->transform(), transform);
+    pan->click();
+    QVERIFY(!canvas->isDistortActive());
+    tool->click();
+    window.toggleLayers();
+    QVERIFY(!canvas->isDistortActive());
+    window.openFile(next);
+    QTRY_COMPARE(canvas->getCurrentMedia().fileInfo.absoluteFilePath(), next);
+    QTRY_VERIFY(canvas->canDistort());
+    QVERIFY(!canvas->layerModel()->stack().hasDistortion());
+    QCOMPARE(canvas->layerModel()->stack().layers.size(), 1);
 }
 
 void ActionManagerTests::testLayersHud()

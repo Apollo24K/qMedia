@@ -186,6 +186,10 @@ private:
     QShortcut *escShortcut;
 
     QVInfoDialog *info;
+    int distortHeldKey = 0;
+    bool temporaryDistort = false;
+    QList<QKeySequence> distortShortcuts;
+    void finishDistortShortcut();
     int compareHeldKey = 0;
     QList<QKeySequence> compareShortcuts;
     QVLayersHud *layersHud = nullptr;

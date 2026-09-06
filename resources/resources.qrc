@@ -18,6 +18,7 @@
         <file alias="eye.svg">layers/eye.svg</file>
         <file alias="eye-off.svg">layers/eye-off.svg</file>
         <file alias="hand.svg">layers/hand.svg</file>
+        <file alias="distort.svg">layers/distort.svg</file>
         <file alias="fit.svg">layers/fit.svg</file>
         <file alias="export.svg">layers/export.svg</file>
         <file alias="source.svg">layers/source.svg</file>

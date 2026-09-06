@@ -197,22 +197,38 @@ bool MainWindow::event(QEvent *event)
     return QMainWindow::event(event);
 }
 
+void MainWindow::finishDistortShortcut()
+{
+    distortHeldKey = 0;
+    if (temporaryDistort) {
+        temporaryDistort = false;
+        graphicsView->setDistortActive(false);
+        if (layersHud) layersHud->setDistortActive(false);
+    }
+}
+
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
     // A release can reach a different widget, or never arrive after switching apps.
-    if (compareHeldKey && (event->type() == QEvent::ApplicationDeactivate
+    if ((compareHeldKey || distortHeldKey) && (event->type() == QEvent::ApplicationDeactivate
             || (event->type() == QEvent::WindowDeactivate
                 && (watched == this || watched == filtersDialog))
             || (event->type() == QEvent::Hide
                 && (watched == this || watched == filtersDialog)))) {
         compareHeldKey = 0;
         graphicsView->setCompareOriginal(false);
+        finishDistortShortcut();
     }
     if (event->type() != QEvent::KeyPress && event->type() != QEvent::KeyRelease
             && event->type() != QEvent::ShortcutOverride)
         return QMainWindow::eventFilter(watched, event);
 
     auto *key = static_cast<QKeyEvent *>(event);
+    if (distortHeldKey && key->key() == distortHeldKey) {
+        if (event->type() == QEvent::KeyRelease && !key->isAutoRepeat()) finishDistortShortcut();
+        event->accept();
+        return true;
+    }
     if (compareHeldKey && key->key() == compareHeldKey) {
         if (event->type() == QEvent::KeyRelease && !key->isAutoRepeat()) {
             compareHeldKey = 0;
@@ -223,7 +239,7 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     }
     auto *widget = qobject_cast<QWidget *>(watched);
     if (!widget || (widget->window() != this && widget->window() != filtersDialog)
-            || !graphicsView->isMediaLoaded() || key->isAutoRepeat()
+            || !graphicsView->isMediaLoaded()
             || event->type() == QEvent::KeyRelease)
         return false;
     // Also check focus: ignored editor keys can bubble up to their parent window.
@@ -242,7 +258,22 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
                             && isEditor(focused)))
         return false;
     const QKeySequence pressed(key->key() | int(key->modifiers()));
-    if (!compareShortcuts.contains(pressed)) return false;
+    if (graphicsView->isDistortActive() && pressed == QKeySequence(Qt::CTRL | Qt::Key_Z)) {
+        if (event->type() == QEvent::KeyPress && !key->isAutoRepeat()) graphicsView->undoDistort();
+        event->accept();
+        return true;
+    }
+    if (distortShortcuts.contains(pressed) && graphicsView->canDistort()) {
+        if (event->type() == QEvent::KeyPress && !key->isAutoRepeat()) {
+            distortHeldKey = key->key();
+            temporaryDistort = !layersHud || !layersHud->isVisible();
+            graphicsView->setDistortActive(true);
+            if (layersHud) layersHud->setDistortActive(true);
+        }
+        event->accept();
+        return true;
+    }
+    if (key->isAutoRepeat() || !compareShortcuts.contains(pressed)) return false;
     if (event->type() == QEvent::KeyPress) {
         compareHeldKey = key->key();
         graphicsView->setCompareOriginal(true);
@@ -460,9 +491,13 @@ void MainWindow::shortcutsUpdated()
     compareHeldKey = 0;
     graphicsView->setCompareOriginal(false);
     compareShortcuts.clear();
+    finishDistortShortcut();
+    distortShortcuts.clear();
     for (const auto &shortcut : qvApp->getShortcutManager().getShortcutsList()) {
         if (shortcut.name == "compareoriginal")
             compareShortcuts = ShortcutManager::stringListToKeySequenceList(shortcut.shortcuts);
+        if (shortcut.name == "distort")
+            distortShortcuts = ShortcutManager::stringListToKeySequenceList(shortcut.shortcuts);
     }
     // If esc is not used in a shortcut, let it exit fullscreen
     escShortcut->setKey(Qt::Key_Escape);
@@ -485,7 +520,11 @@ void MainWindow::openRecent(int i)
 
 void MainWindow::fileChanged()
 {
-    if (layersHud) layersHud->setSource(getCurrentMedia().fileInfo.fileName(), getIsMediaLoaded());
+    if (layersHud) {
+        layersHud->setSource(getCurrentMedia().fileInfo.fileName(), getIsMediaLoaded());
+        layersHud->setDistortAvailable(graphicsView->canDistort());
+        layersHud->setDistortActive(graphicsView->isDistortActive());
+    }
     populateOpenWithTimer->start();
     disableActions();
 
@@ -1071,7 +1110,7 @@ void MainWindow::undoDelete()
 void MainWindow::copy()
 {
     auto *mimeData = graphicsView->getMimeData();
-    if (!mimeData->hasImage() || !mimeData->hasUrls()) {
+    if (!mimeData->hasImage()) {
         mimeData->deleteLater();
         return;
     }
@@ -1286,9 +1325,16 @@ void MainWindow::ensureLayersHud()
     if (layersHud) return;
     layersHud = new QVLayersHud(graphicsView->layerModel(), graphicsView->viewport());
     connect(layersHud, &QVLayersHud::filtersRequested, this, &MainWindow::openFilters);
+    connect(layersHud, &QVLayersHud::distortRequested, graphicsView, &QVGraphicsView::setDistortActive);
+    connect(layersHud, &QVLayersHud::layerSelected, graphicsView, &QVGraphicsView::setDistortLayer);
+    connect(layersHud, &QVLayersHud::distortSizeChanged, graphicsView, &QVGraphicsView::setDistortRadius);
+    connect(graphicsView, &QVGraphicsView::distortLayerCreated, layersHud, &QVLayersHud::selectLayer);
+    connect(graphicsView, &QVGraphicsView::distortRadiusChanged, layersHud, &QVLayersHud::setBrushRadius);
     connect(layersHud, &QVLayersHud::exportRequested, this, &MainWindow::saveFrameAs);
     connect(layersHud, &QVLayersHud::resetViewRequested, this, &MainWindow::resetView);
     layersHud->setSource(getCurrentMedia().fileInfo.fileName(), getIsMediaLoaded());
+    layersHud->setDistortAvailable(graphicsView->canDistort());
+    graphicsView->setDistortLayer(layersHud->selectedLayerId());
 }
 
 void MainWindow::toggleLayers()

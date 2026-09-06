@@ -67,6 +67,12 @@ public:
     QSize currentMediaSize() const;
     QVExport::Source exportSource() const;
     void setCompareOriginal(bool enabled);
+    bool canDistort() const;
+    void setDistortActive(bool active);
+    void setDistortRadius(int radius);
+    void undoDistort();
+    void setDistortLayer(quint64 id) { selectedDistortLayer = id; }
+    bool isDistortActive() const { return distortActive; }
     bool isComparingOriginal() const { return compareOriginal; }
     QVLayerModel *layerModel() { return &layers; }
     void reloadVideo();
@@ -94,6 +100,8 @@ signals:
     void videoPlaybackStateChanged();
     void videoErrorOccurred();
     void fullscreenRequested();
+    void distortLayerCreated(quint64 id);
+    void distortRadiusChanged(int radius);
 
 protected:
     void wheelEvent(QWheelEvent *event) override;
@@ -123,6 +131,8 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
 
     bool event(QEvent *event) override;
+    void drawForeground(QPainter *painter, const QRectF &rect) override;
+    void leaveEvent(QEvent *event) override;
 
     void fitInViewMarginless(const QRectF &rect);
     void fitInViewMarginless(const QGraphicsItem *item);
@@ -181,6 +191,18 @@ private:
     QPointF canvasCenterRoundingError;
     NavigationCanvasState navigationCanvasState;
     QVPlaybackLoopMode loopMode;
+    bool distortActive = false;
+    bool distortDragging = false;
+    bool distortHover = false;
+    int distortRadius = 48;
+    quint64 selectedDistortLayer = 0;
+    quint64 strokeLayer = 0;
+    QPointF distortPosition;
+    QPointF strokeStart;
+    double strokeRadius = 0.1;
+    QString distortSource;
+    QPointF distortPoint(const QPoint &position) const;
+    void continueDistort(const QPoint &position);
     bool compareOriginal = false;
     QVLayerModel layers{ this };
     void updateLayerEffects();

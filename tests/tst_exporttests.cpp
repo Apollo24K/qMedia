@@ -12,6 +12,7 @@ private slots:
     void preservesFilesOnFailureAndCancellation();
     void conversionArguments();
     void wholeMedia();
+    void distortion();
     void transforms();
     void filters();
     void videoSpeed();
@@ -39,6 +40,36 @@ void ExportTests::stillImage()
     QVERIFY(QVExport::run(source, options, jpeg, {}, cancel).error.isEmpty());
     QCOMPARE(QImage(jpeg).pixelColor(0, 0), QColor(Qt::white));
     QCOMPARE(QImage(source.path).size(), image.size());
+}
+
+void ExportTests::distortion()
+{
+    QTemporaryDir directory;
+    QVExport::Source source;
+    source.frame = QImage(80, 60, QImage::Format_ARGB32);
+    for (int y = 0; y < 60; ++y)
+        for (int x = 0; x < 80; ++x) source.frame.setPixel(x, y, qRgb(x*3, y*4, 90));
+    QVExport::Options options;
+    QVLayers::Layer layer;
+    layer.kind = QVLayers::Kind::Distort;
+    QVLayers::DistortStroke stroke;
+    stroke.points = { QPointF(0.4, 0.5), QPointF(0.55, 0.5) };
+    stroke.radius = 0.25;
+    layer.strokes = { stroke };
+    options.layers.layers.prepend(layer);
+    options.rotation = 90;
+    options.mirrored = true;
+    options.size = QSize(30, 40);
+    const QString path = directory.filePath("distorted.png");
+    const auto result = QVExport::run(source, options, path, {}, std::make_shared<std::atomic_bool>(false));
+    QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
+    const auto expected = QVLayers::apply(source.frame.transformed(QTransform().rotate(90)),
+                                          QVLayers::rotated(options.layers, 90))
+            .mirrored(true, false).scaled(options.size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    QCOMPARE(QImage(path), expected);
+    options.wholeMedia = true;
+    QVERIFY(!QVExport::run(source, options, directory.filePath("out.mp4"), {},
+                           std::make_shared<std::atomic_bool>(false)).error.isEmpty());
 }
 
 void ExportTests::transforms()

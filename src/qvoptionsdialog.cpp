@@ -42,6 +42,15 @@ QVOptionsDialog::QVOptionsDialog(QWidget *parent) : QDialog(parent), ui(new Ui::
     connect(ui->buttonBox, &QDialogButtonBox::clicked, this, &QVOptionsDialog::buttonBoxClicked);
     connect(ui->shortcutsTable, &QTableWidget::cellDoubleClicked, this,
             &QVOptionsDialog::shortcutCellDoubleClicked);
+    connect(ui->shortcutsSearch, &QLineEdit::textChanged, this,
+            &QVOptionsDialog::filterShortcuts);
+    connect(ui->shortcutsSearchMode, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int mode) {
+                ui->shortcutsSearch->setPlaceholderText(mode == 1 ? tr("Search action names...")
+                        : mode == 2 ? tr("Key or combination, e.g. C or Ctrl+C")
+                                    : tr("Search actions or shortcuts..."));
+                filterShortcuts();
+            });
     connect(ui->bgColorCheckbox, &QCheckBox::stateChanged, this,
             &QVOptionsDialog::bgColorCheckboxStateChanged);
     connect(ui->scalingCheckbox, &QCheckBox::stateChanged, this,
@@ -393,7 +402,44 @@ void QVOptionsDialog::updateShortcutsTable()
         ui->shortcutsTable->item(i, 1)->setText(
                 ShortcutManager::stringListToReadableString(shortcuts));
     }
+    filterShortcuts();
     updateButtonBox();
+}
+
+void QVOptionsDialog::filterShortcuts()
+{
+    const QString query = ui->shortcutsSearch->text().trimmed();
+    const int mode = ui->shortcutsSearchMode->currentIndex();
+    const auto combinedKey = [](const QKeySequence &sequence) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        return sequence[0].toCombined();
+#else
+        return sequence[0];
+#endif
+    };
+    QKeySequence searchedKey = QKeySequence::fromString(query, QKeySequence::NativeText);
+    if (searchedKey.isEmpty() || combinedKey(searchedKey) == Qt::Key_unknown)
+        searchedKey = QKeySequence::fromString(query, QKeySequence::PortableText);
+    const int searchedCode = combinedKey(searchedKey);
+    const bool validKey = searchedKey.count() == 1 && searchedCode != Qt::Key_unknown;
+    const int modifiers = int(Qt::KeyboardModifierMask);
+    for (int row = 0; row < ui->shortcutsTable->rowCount(); ++row) {
+        bool matches = query.isEmpty();
+        if (mode != 2)
+            matches |= ui->shortcutsTable->item(row, 0)->text().contains(query, Qt::CaseInsensitive);
+        if (mode == 0)
+            matches |= ui->shortcutsTable->item(row, 1)->text().contains(query, Qt::CaseInsensitive);
+        if (mode == 2 && validKey) {
+            const auto bindings = ShortcutManager::stringListToKeySequenceList(transientShortcuts.value(row));
+            for (const auto &binding : bindings) {
+                const int code = combinedKey(binding);
+                // A bare key includes modified bindings; a chord matches exactly.
+                matches |= (searchedCode & modifiers) ? code == searchedCode
+                        : (code & ~modifiers) == searchedCode;
+            }
+        }
+        ui->shortcutsTable->setRowHidden(row, !matches);
+    }
 }
 
 void QVOptionsDialog::shortcutCellDoubleClicked(int row, int column)
@@ -551,7 +597,7 @@ void QVOptionsDialog::populateLanguages()
 
     const auto entries = QDir(":/i18n/").entryList();
     for (auto entry : entries) {
-        entry.remove(0, 6);
+        entry.remove(0, QStringLiteral("qmedia_").length());
         entry.remove(entry.length() - 3, 3);
         QLocale locale(entry);
 

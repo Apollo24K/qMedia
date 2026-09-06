@@ -64,6 +64,26 @@ for the build.
 
 ## Layers HUD
 
+Ctrl+C copies the image at native resolution with its layers, rotation, mirror,
+and flip applied. Pan and zoom do not crop or resize the clipboard image.
+Edited copies contain image/PNG data without the original file URL, so pasting
+uses the edited pixels. Unchanged media retains the file URL for file copying
+and preservation of animations; edited animations copy the current frame.
+
+The Distort toolbar icon enables a soft pixel-push brush for still images.
+Press D to select it when the HUD is visible. With the HUD hidden, hold D to
+use Distort temporarily; releasing D or switching windows restores Pan. This
+binding is customizable in Settings > Shortcuts and ignores text editors.
+Drag on the image to create a Distort layer, or select an existing Distort layer
+to continue it. Alt+wheel adjusts brush radius; right-click the tool for a size
+slider. Select Pan or hide the HUD to leave the tool. Distort layers support
+visibility, strength, blending, duplication, reordering, and the context-menu
+commands Undo last stroke and Reset distortion. Ctrl+Z undoes strokes while the
+Distort tool is active; text fields retain their normal undo. Hold C still compares the original.
+Edits follow image rotation/mirroring and are included in still-image exports.
+Distort layers belong to the current image and are cleared when opening another
+file; animated images and video do not enable this tool yet.
+
 Hold C to compare against the original decoded image or video frame; release it
 to restore the layer composite. Pan, zoom, playback, layer settings, and exports
 are unchanged. Comparison also ends when the window loses focus. The shortcut

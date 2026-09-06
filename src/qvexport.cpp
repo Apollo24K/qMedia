@@ -158,6 +158,8 @@ Result run(const Source &source, const Options &options, const QString &destinat
     if (cancel->load())
         return { {}, true };
 
+    if (options.wholeMedia && options.layers.hasDistortion())
+        return { QStringLiteral("Distortion currently supports still-image export only."), false };
     if (!options.wholeMedia) {
         QImage frame = source.frame;
         if (frame.isNull() && !source.video) {
@@ -187,10 +189,13 @@ Result run(const Source &source, const Options &options, const QString &destinat
         }
         if (frame.isNull())
             return { QStringLiteral("The current frame is not available yet."), false };
-        frame = frame.transformed(QTransform().rotate(options.rotation))
-                        .mirrored(options.mirrored, options.flipped);
+        frame = frame.transformed(QTransform().rotate(options.rotation));
+        // Match the canvas: image rotation precedes effects; view mirroring follows.
+        if (options.layers.hasDistortion())
+            frame = QVLayers::apply(frame, QVLayers::rotated(options.layers, options.rotation));
+        frame = frame.mirrored(options.mirrored, options.flipped);
         frame = frame.scaled(options.size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-        frame = QVLayers::apply(frame, options.layers);
+        if (!options.layers.hasDistortion()) frame = QVLayers::apply(frame, options.layers);
         // Flatten transparency explicitly for formats without an alpha channel.
         if (options.format == "jpeg" || options.format == "bmp") {
             QImage opaque(frame.size(), QImage::Format_RGB32);

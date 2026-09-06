@@ -44,6 +44,7 @@ protected:
                            bool makeConnection = false);
     void syncShortcuts(bool defaults = false);
     void updateShortcutsTable();
+    void filterShortcuts();
     void updateButtonBox();
     void bgColorButtonClicked(QPushButton *button, const QString &key);
     void updateBgColorButton(QPushButton *button);

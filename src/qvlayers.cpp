@@ -1,5 +1,6 @@
 #include "qvlayers.h"
 #include <QtMath>
+#include <QLineF>
 
 namespace {
 double blendChannel(double base, double top, QVLayers::Blend blend)
@@ -30,12 +31,75 @@ QString blendExpression(const QString &base, const QString &top, QVLayers::Blend
 }
 
 int channel(double value) { return qBound(0, qRound(value), 255); }
+
+void pushPixels(QImage &image, QPointF from, QPointF to, double radius)
+{
+    const QPointF delta = (to - from) * 0.65;
+    if (radius <= 0 || delta.isNull()) return;
+    const QRect affected = QRectF(to - QPointF(radius, radius), QSizeF(2 * radius, 2 * radius))
+            .toAlignedRect().intersected(image.rect());
+    if (affected.isEmpty()) return;
+    const QRect sampleRect = QRectF(affected).united(QRectF(affected).translated(-delta))
+            .adjusted(-1, -1, 1, 1).toAlignedRect().intersected(image.rect());
+    const QImage before = image.copy(sampleRect);
+    const double inverseRadiusSquared = 1.0 / (radius * radius);
+    for (int y = affected.top(); y <= affected.bottom(); ++y) {
+        auto *line = reinterpret_cast<QRgb *>(image.scanLine(y));
+        for (int x = affected.left(); x <= affected.right(); ++x) {
+            const double distance = ((x - to.x()) * (x - to.x()) + (y - to.y()) * (y - to.y()))
+                    * inverseRadiusSquared;
+            if (distance >= 1) continue;
+            const double weight = (1 - distance) * (1 - distance);
+            const double sx = qBound(0.0, x - delta.x() * weight - sampleRect.x(), double(before.width() - 1));
+            const double sy = qBound(0.0, y - delta.y() * weight - sampleRect.y(), double(before.height() - 1));
+            const int x0 = int(sx), y0 = int(sy);
+            const int x1 = qMin(x0 + 1, before.width() - 1), y1 = qMin(y0 + 1, before.height() - 1);
+            const double fx = sx - x0, fy = sy - y0;
+            const QRgb pixels[] = { before.pixel(x0, y0), before.pixel(x1, y0),
+                                    before.pixel(x0, y1), before.pixel(x1, y1) };
+            const double weights[] = { (1-fx)*(1-fy), fx*(1-fy), (1-fx)*fy, fx*fy };
+            double a = 0, r = 0, g = 0, b = 0;
+            for (int n = 0; n < 4; ++n) {
+                const double alpha = qAlpha(pixels[n]) * weights[n];
+                a += alpha;
+                r += qRed(pixels[n]) * alpha;
+                g += qGreen(pixels[n]) * alpha;
+                b += qBlue(pixels[n]) * alpha;
+            }
+            line[x] = a > 0 ? qRgba(channel(r/a), channel(g/a), channel(b/a), channel(a)) : 0;
+        }
+    }
+}
+
+QImage distort(const QImage &source, const QVector<QVLayers::DistortStroke> &strokes)
+{
+    QImage result = source;
+    result.detach();
+    for (const auto &stroke : strokes) {
+        const double radius = stroke.radius * qMin(source.width(), source.height());
+        if (!qIsFinite(radius) || radius <= 0) continue;
+        for (int i = 1; i < stroke.points.size(); ++i) {
+            const auto pixelPoint = [&](QPointF point) {
+                return QPointF(point.x() * (source.width() - 1), point.y() * (source.height() - 1));
+            };
+            const QPointF from = pixelPoint(stroke.points[i - 1]), to = pixelPoint(stroke.points[i]);
+            const double length = QLineF(from, to).length();
+            if (!qIsFinite(length)) continue;
+            const int steps = qMax(1, int(qCeil(length / qMax(1.0, radius * 0.25))));
+            for (int step = 0; step < steps; ++step)
+                pushPixels(result, from + (to-from) * (double(step)/steps),
+                           from + (to-from) * (double(step+1)/steps), radius);
+        }
+    }
+    return result;
+}
 }
 
 bool QVLayers::Layer::samePixels(const Layer &other) const
 {
     return kind == other.kind && visible == other.visible && strength == other.strength
-            && blend == other.blend && (kind != Kind::Filter || filter == other.filter);
+            && blend == other.blend && (kind != Kind::Filter || filter == other.filter)
+            && (kind != Kind::Distort || strokes == other.strokes);
 }
 
 bool QVLayers::Stack::samePixels(const Stack &other) const
@@ -53,12 +117,43 @@ bool QVLayers::Stack::isNeutral() const
         if (!layer.visible || layer.strength == 0) continue;
         if (layer.kind == Kind::Filter) {
             if (!layer.filter.isNeutral() || layer.blend != Blend::Normal) return false;
+        } else if (layer.kind == Kind::Distort) {
+            if (!layer.strokes.isEmpty()) return false;
         } else {
             if (source || layer.strength != 100 || layer.blend != Blend::Normal) return false;
             source = true;
         }
     }
     return source;
+}
+
+QPointF QVLayers::rotatePoint(QPointF point, int degrees)
+{
+    switch ((degrees % 360 + 360) % 360) {
+    case 90: return { 1.0 - point.y(), point.x() };
+    case 180: return { 1.0 - point.x(), 1.0 - point.y() };
+    case 270: return { point.y(), 1.0 - point.x() };
+    default: return point;
+    }
+}
+
+QVLayers::Stack QVLayers::rotated(const Stack &stack, int degrees)
+{
+    Stack result = stack;
+    if (degrees % 360 == 0 || !stack.hasDistortion()) return result;
+    for (auto &layer : result.layers)
+        if (layer.kind == Kind::Distort)
+            for (auto &stroke : layer.strokes)
+                for (auto &point : stroke.points) point = rotatePoint(point, degrees);
+    return result;
+}
+
+bool QVLayers::Stack::hasDistortion() const
+{
+    for (const auto &layer : layers)
+        if (layer.kind == Kind::Distort && layer.visible && layer.strength > 0
+                && !layer.strokes.isEmpty()) return true;
+    return false;
 }
 
 QVLayers::Stack QVLayers::fromFilters(const QVFilters::Settings &filters)
@@ -83,6 +178,7 @@ QImage QVLayers::apply(const QImage &source, const Stack &stack)
     for (int i = stack.layers.size() - 1; i >= 0; --i) {
         const auto &layer = stack.layers[i];
         if (!layer.visible || layer.strength <= 0) continue;
+        if (layer.kind == Kind::Distort && layer.strokes.isEmpty()) continue;
         if (layer.kind == Kind::Filter && layer.filter.isNeutral()
                 && layer.blend == Blend::Normal) continue;
         if (layer.kind == Kind::Source && empty && layer.strength == 100) {
@@ -95,6 +191,10 @@ QImage QVLayers::apply(const QImage &source, const Stack &stack)
             QVFilters::Settings settings;
             settings.layers = { layer.filter };
             top = QVFilters::apply(result, settings);
+        } else if (layer.kind == Kind::Distort) {
+            top = distort(result, layer.strokes);
+        }
+        if (layer.kind != Kind::Source) {
             if (layer.strength == 100 && layer.blend == Blend::Normal) {
                 result = top;
                 continue;
@@ -110,7 +210,7 @@ QImage QVLayers::apply(const QImage &source, const Stack &stack)
                 const double upper[] = { double(qRed(src[x])), double(qGreen(src[x])), double(qBlue(src[x])) };
                 double color[3];
                 double alpha;
-                if (layer.kind == Kind::Filter) {
+                if (layer.kind != Kind::Source) {
                     for (int c = 0; c < 3; ++c)
                         color[c] = base[c] + strength * (blendChannel(base[c], upper[c], layer.blend) - base[c]);
                     alpha = qAlpha(dst[x]) + strength * (qAlpha(src[x]) - qAlpha(dst[x]));
@@ -133,6 +233,8 @@ QImage QVLayers::apply(const QImage &source, const Stack &stack)
 
 QString QVLayers::ffmpegFilter(const Stack &stack)
 {
+    // Distortion is currently a still-image tool; whole-media export rejects it.
+    if (stack.hasDistortion()) return {};
     if (stack.isNeutral()) return {};
     // geq evaluates each output channel independently. Registers 0..3 retain
     // the original frame; 4..7 hold the composite and 8..9 are scratch space.
@@ -143,6 +245,7 @@ QString QVLayers::ffmpegFilter(const Stack &stack)
     for (int i = stack.layers.size() - 1; i >= 0; --i) {
         const auto &layer = stack.layers[i];
         if (!layer.visible || layer.strength <= 0) continue;
+        if (layer.kind == Kind::Distort) continue;
         const QString strength = QString::number(qBound(0, layer.strength, 100) / 100.0, 'f', 8);
         if (layer.kind == Kind::Filter) {
             const auto expressions = QVFilters::channelExpressions(layer.filter,
@@ -189,7 +292,8 @@ void QVLayerModel::setStack(const QVLayers::Stack &stack)
     for (auto &layer : current.layers) {
         layer.id = nextId++;
         layer.strength = qBound(0, layer.strength, 100);
-        if (layer.name.isEmpty()) layer.name = layer.kind == QVLayers::Kind::Source ? tr("Source") : tr("Filter");
+        if (layer.name.isEmpty()) layer.name = layer.kind == QVLayers::Kind::Source ? tr("Source")
+                : layer.kind == QVLayers::Kind::Distort ? tr("Distort") : tr("Filter");
     }
     emit changed();
     if (pixels) emit pixelsChanged();
@@ -204,6 +308,38 @@ quint64 QVLayerModel::addFilter(int above)
     current.layers.insert(qBound(0, above, int(current.layers.size())), layer);
     emit changed();
     return layer.id;
+}
+
+quint64 QVLayerModel::addDistort(int above)
+{
+    QVLayers::Layer layer;
+    layer.id = nextId++;
+    layer.kind = QVLayers::Kind::Distort;
+    layer.name = tr("Distort");
+    current.layers.insert(qBound(0, above, int(current.layers.size())), layer);
+    emit changed();
+    return layer.id;
+}
+
+void QVLayerModel::undoDistort(quint64 id)
+{
+    const int index = indexOf(id);
+    if (index < 0 || current.layers[index].kind != QVLayers::Kind::Distort
+            || current.layers[index].strokes.isEmpty()) return;
+    auto layer = current.layers[index];
+    layer.strokes.removeLast();
+    update(layer);
+}
+
+void QVLayerModel::clearDistortions()
+{
+    bool changedStack = false;
+    for (int i = current.layers.size() - 1; i >= 0; --i)
+        if (current.layers[i].kind == QVLayers::Kind::Distort) {
+            current.layers.removeAt(i);
+            changedStack = true;
+        }
+    if (changedStack) { emit changed(); emit pixelsChanged(); }
 }
 
 quint64 QVLayerModel::duplicate(quint64 id)

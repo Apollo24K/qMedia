@@ -57,7 +57,7 @@ QVClipboard::Media QVClipboard::read(const QMimeData &data)
 {
     Media result;
     result.image = qvariant_cast<QImage>(data.imageData());
-    // File copies (including qMedia's own Copy) preserve the original animation.
+    // File copies (including unchanged media from qMedia) preserve the original animation.
     for (const QUrl &url : data.urls()) {
         if (url.isLocalFile())
             result.urls.append(url);

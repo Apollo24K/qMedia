@@ -58,7 +58,14 @@ public:
     void toggle();
     quint64 selectedLayerId() const { return selectedId(); }
     void setSource(const QString &name, bool available);
+    void setDistortAvailable(bool available);
+    void setDistortActive(bool active);
+    void setBrushRadius(int radius);
+    void selectLayer(quint64 id) { select(id); }
 signals:
+    void layerSelected(quint64 id);
+    void distortRequested(bool active);
+    void distortSizeChanged(int radius);
     void filtersRequested(quint64 id);
     void exportRequested();
     void resetViewRequested();
@@ -81,6 +88,8 @@ private:
     QComboBox *blend;
     QSlider *strength;
     QLabel *strengthValue;
+    QToolButton *distortButton;
+    QToolButton *panButton;
     QToolButton *removeButton;
     QToolButton *upButton;
     QToolButton *downButton;

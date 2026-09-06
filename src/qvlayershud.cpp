@@ -1,4 +1,5 @@
 #include "qvlayershud.h"
+#include <QWidgetAction>
 #include <QApplication>
 #include <QAction>
 #include <QChildEvent>
@@ -240,7 +241,7 @@ void QVOverlayPanel::restorePlacement(const QString &key, const QSize &size)
 {
     defaultSize = size;
     const QSettings settings;
-    preferredSize = settings.value(key + "/size", size).toSize().expandedTo(QSize(40, 80));
+    preferredSize = (resizable ? settings.value(key + "/size", size).toSize() : size).expandedTo(QSize(40, 80));
     horizontalAnchor = qBound(0, settings.value(key + "/horizontal", defaultRight ? 2 : 1).toInt(), 2);
     verticalAnchor = qBound(0, settings.value(key + "/vertical", defaultRight ? 2 : 1).toInt(), 2);
     // Migrate the previous default top-right placement once. Free placements stay put.
@@ -501,14 +502,45 @@ QVLayersHud::QVLayersHud(QVLayerModel *layerModel, QWidget *viewport)
     toolbar->setDragHandle(grip);
     tools->addWidget(grip);
     auto *hand = button(toolbar, "hand", tr("Pan canvas (drag the image)"), "layersPan");
+    panButton = hand;
+    panButton->setCheckable(true);
+    panButton->setChecked(true);
+    distortButton = button(toolbar, "distort", tr("Distort (D): drag to push pixels (Ctrl+Z to undo) · Alt+wheel changes brush size · Right-click for size"), "layersDistort");
+    distortButton->setCheckable(true);
+    distortButton->setContextMenuPolicy(Qt::CustomContextMenu);
+    auto *brushMenu = new QMenu(distortButton);
+    auto *brushOptions = new QWidget(brushMenu);
+    auto *brushLayout = new QVBoxLayout(brushOptions);
+    brushLayout->addWidget(new QLabel(tr("Brush radius"), brushOptions));
+    auto *brushSize = new QSlider(Qt::Horizontal, brushOptions);
+    brushSize->setObjectName("distortBrushSize");
+    brushSize->setAccessibleName(tr("Distort brush radius"));
+    brushSize->setRange(8, 200);
+    brushSize->setValue(48);
+    brushSize->setMinimumWidth(160);
+    brushLayout->addWidget(brushSize);
+    auto *brushAction = new QWidgetAction(brushMenu);
+    brushAction->setDefaultWidget(brushOptions);
+    brushMenu->addAction(brushAction);
+    connect(brushSize, &QSlider::valueChanged, this, &QVLayersHud::distortSizeChanged);
+    connect(distortButton, &QWidget::customContextMenuRequested, this,
+            [brushMenu, this](const QPoint &pos) { brushMenu->popup(distortButton->mapToGlobal(pos)); });
+    connect(distortButton, &QToolButton::clicked, this, [this](bool active) {
+        setDistortActive(active);
+        emit distortRequested(active);
+    });
     auto *filterTool = button(toolbar, "filter", tr("Filters (U)"), "layersFilterTool");
     auto *fit = button(toolbar, "fit", tr("Reset view"), "layersResetView");
     auto *save = button(toolbar, "export", tr("Export media"), "layersExport");
-    for (auto *tool : { hand, filterTool, fit, save }) tools->addWidget(tool);
+    for (auto *tool : { hand, distortButton, filterTool, fit, save }) tools->addWidget(tool);
     tools->addStretch();
 
     connect(close, &QToolButton::clicked, this, [this] { setVisible(false); });
-    connect(hand, &QToolButton::clicked, viewport, [viewport] { viewport->setFocus(); });
+    connect(hand, &QToolButton::clicked, this, [this, viewport] {
+        setDistortActive(false);
+        emit distortRequested(false);
+        viewport->setFocus();
+    });
     connect(filterTool, &QToolButton::clicked, this, [this] { emit filtersRequested(selectedId()); });
     connect(fit, &QToolButton::clicked, this, &QVLayersHud::resetViewRequested);
     connect(save, &QToolButton::clicked, this, &QVLayersHud::exportRequested);
@@ -537,7 +569,7 @@ QVLayersHud::QVLayersHud(QVLayerModel *layerModel, QWidget *viewport)
     connect(strength, &QSlider::valueChanged, this, &QVLayersHud::updateSelection);
     connect(model, &QVLayerModel::changed, this, &QVLayersHud::refresh);
     panel->restorePlacement("layersHud/panel", QSize(292, 490));
-    toolbar->restorePlacement("layersHud/tools", QSize(46, 166));
+    toolbar->restorePlacement("layersHud/tools", QSize(46, 201));
     refresh();
 }
 
@@ -554,6 +586,8 @@ void QVLayersHud::toggle() { setVisible(!isVisible()); }
 void QVLayersHud::setVisible(bool visible)
 {
     if (!visible) {
+        setDistortActive(false);
+        emit distortRequested(false);
         panel->savePlacement("layersHud/panel");
         toolbar->savePlacement("layersHud/tools");
     }
@@ -561,6 +595,27 @@ void QVLayersHud::setVisible(bool visible)
     toolbar->setVisible(visible);
     if (visible) { panel->fitToViewport(); toolbar->fitToViewport(); panel->raise(); toolbar->raise(); }
     else panel->parentWidget()->setFocus();
+}
+
+void QVLayersHud::setDistortAvailable(bool available)
+{
+    distortButton->setEnabled(available);
+    if (!available) { setDistortActive(false); emit distortRequested(false); }
+    distortButton->setToolTip(available
+            ? tr("Distort (D): drag to push pixels (Ctrl+Z to undo) · Alt+wheel changes brush size · Right-click for size")
+            : tr("Distort is available for still images"));
+}
+
+void QVLayersHud::setBrushRadius(int radius)
+{
+    auto *slider = distortButton->findChild<QSlider *>("distortBrushSize");
+    if (slider) { QSignalBlocker blocker(slider); slider->setValue(radius); }
+}
+
+void QVLayersHud::setDistortActive(bool active)
+{
+    distortButton->setChecked(active);
+    panButton->setChecked(!active);
 }
 
 void QVLayersHud::setSource(const QString &source, bool available)
@@ -603,10 +658,13 @@ void QVLayersHud::refresh()
         item->setData(Qt::UserRole, QVariant::fromValue(layer.id));
         item->setData(Qt::UserRole + 1, layer.kind == QVLayers::Kind::Filter);
         item->setText(layer.name);
-        item->setIcon(icon(layer.kind == QVLayers::Kind::Source ? "source" : "filter"));
+        item->setIcon(icon(layer.kind == QVLayers::Kind::Source ? "source"
+                : layer.kind == QVLayers::Kind::Distort ? "distort" : "filter"));
         item->setCheckState(layer.visible ? Qt::Checked : Qt::Unchecked);
         item->setFlags(item->flags() | Qt::ItemIsEditable | Qt::ItemIsUserCheckable | Qt::ItemIsDragEnabled);
-        item->setToolTip(layer.kind == QVLayers::Kind::Source ? tr("Live source media") : tr("Click the filter icon to edit · Adjusts the layers below"));
+        item->setToolTip(layer.kind == QVLayers::Kind::Source ? tr("Live source media")
+                : layer.kind == QVLayers::Kind::Distort ? tr("Pushes pixels in the layers below · Right-click for stroke undo")
+                : tr("Click the filter icon to edit · Adjusts the layers below"));
     }
     if (rebuild) { select(id); if (!list->currentItem()) list->setCurrentRow(qBound(0, row, list->count() - 1)); }
     loading = false;
@@ -615,6 +673,7 @@ void QVLayersHud::refresh()
 
 void QVLayersHud::loadSelection()
 {
+    emit layerSelected(selectedId());
     if (loading) return;
     const int index = model->indexOf(selectedId());
     if (index < 0) return;
@@ -625,7 +684,7 @@ void QVLayersHud::loadSelection()
     strengthValue->setText(QString::number(layer.strength) + "%");
     int sources = 0;
     for (const auto &entry : model->stack().layers) sources += entry.kind == QVLayers::Kind::Source;
-    removeButton->setEnabled(list->isEnabled() && (layer.kind == QVLayers::Kind::Filter || sources > 1));
+    removeButton->setEnabled(list->isEnabled() && (layer.kind != QVLayers::Kind::Source || sources > 1));
     removeButton->setToolTip(layer.kind == QVLayers::Kind::Source && sources == 1
                             ? tr("Keep one source layer; use visibility to hide it") : tr("Remove layer"));
     upButton->setEnabled(list->isEnabled() && index > 0);
@@ -684,6 +743,23 @@ void QVLayersHud::showLayerMenu(const QPoint &position)
         addAction(tr("Edit filter..."), "layerEditFilter", [this, id] {
             if (model->indexOf(id) >= 0) emit filtersRequested(id);
         });
+        menu->addSeparator();
+    }
+    if (layer.kind == QVLayers::Kind::Distort) {
+        addAction(tr("Edit distortion"), "layerEditDistort", [this] {
+            if (!distortButton->isEnabled()) return;
+            setDistortActive(true);
+            emit distortRequested(true);
+        });
+        addAction(tr("Undo last stroke"), "layerUndoStroke", [this, id] { model->undoDistort(id); })
+                ->setEnabled(!layer.strokes.isEmpty());
+        addAction(tr("Reset distortion"), "layerResetDistort", [this, id] {
+            const int row = model->indexOf(id);
+            if (row < 0) return;
+            auto entry = model->stack().layers[row];
+            entry.strokes.clear();
+            model->update(entry);
+        })->setEnabled(!layer.strokes.isEmpty());
         menu->addSeparator();
     }
     addAction(tr("Rename"), "layerRename", [this, id] {
