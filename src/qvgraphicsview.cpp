@@ -607,6 +607,19 @@ void QVGraphicsView::saveSessionEdits()
     saved.mirrored = transform().m11() < 0;
     saved.flipped = transform().m22() < 0;
     sessionEdits.insert(distortSource, saved);
+    sessionComposites.remove(distortSource);
+    if (auto *effect = static_cast<QVFilterEffect *>(loadedPixmapItem->graphicsEffect())) {
+        const QPixmap pixels = effect->cachedComposite();
+        if (!pixels.isNull() && !getImageDetails().isMovieLoaded) {
+            const QImage source = getLoadedPixmap().toImage();
+            const qint64 bytes = qint64(source.bytesPerLine()) * source.height()
+                    + qint64(pixels.width()) * pixels.height() * 4;
+            const qint64 cost = (bytes + 1023) / 1024;
+            if (cost <= sessionComposites.maxCost())
+                sessionComposites.insert(distortSource,
+                        new SessionComposite{source, pixels, effect->layerStack()}, int(cost));
+        }
+    }
 }
 
 void QVGraphicsView::restoreSessionEdits(const QString &path)
@@ -696,6 +709,10 @@ void QVGraphicsView::zoom(qreal scaleFactor, const QPoint &pos)
 void QVGraphicsView::scaleExpensively()
 {
     if (videoCanvasActive)
+        return;
+    // Edited still images are composited once at native resolution. Scaling the
+    // display source here only wastes work; the effect scales the cached result.
+    if (!getImageDetails().isMovieLoaded && loadedPixmapItem->graphicsEffect())
         return;
 
     // Determine if mirrored or flipped
@@ -791,6 +808,8 @@ void QVGraphicsView::updateFilteringMode()
                                                             && qvGetSettingBool(FilteringEnabled)
                                                     ? Qt::SmoothTransformation
                                                     : Qt::FastTransformation);
+    if (auto *effect = static_cast<QVFilterEffect *>(loadedPixmapItem->graphicsEffect()))
+        effect->setSmoothScaling(loadedPixmapItem->transformationMode() == Qt::SmoothTransformation);
 }
 
 void QVGraphicsView::animatedFrameChanged(QRect rect)
@@ -815,6 +834,12 @@ void QVGraphicsView::updateLoadedPixmapItem()
     // set pixmap and offset
     loadedPixmapItem->setPixmap(getLoadedPixmap());
     scaledSize = loadedPixmapItem->boundingRect().size().toSize();
+
+    // Restore before window sizing can request a paint of the new image.
+    if (auto *effect = static_cast<QVFilterEffect *>(loadedPixmapItem->graphicsEffect())) {
+        if (const auto *cached = sessionComposites.object(getCurrentMedia().fileInfo.absoluteFilePath()))
+            effect->restoreComposite(cached->pixels, cached->source, cached->layers);
+    }
 
     // Window sizing can synchronously reset the view via resizeEvent. Restore
     // navigation framing only after that sizing has completed.
@@ -1427,6 +1452,10 @@ void QVGraphicsView::updateLayerEffects()
         if (!effect) {
             effect = new QVFilterEffect();
             item->setGraphicsEffect(effect);
+        }
+        if (item == loadedPixmapItem) {
+            effect->setSourcePixmap(!getImageDetails().isMovieLoaded ? getLoadedPixmap() : QPixmap());
+            effect->setSmoothScaling(loadedPixmapItem->transformationMode() == Qt::SmoothTransformation);
         }
         effect->setLayerStack(display);
         effect->setCompareOriginal(compareOriginal);

@@ -10,6 +10,7 @@
 #include <QMimeData>
 #include <QDir>
 #include <QHash>
+#include <QCache>
 #include <QTimer>
 #include <QFileInfo>
 
@@ -208,6 +209,13 @@ private:
         bool flipped = false;
     };
     QHash<QString, SessionEdits> sessionEdits;
+    struct SessionComposite {
+        QImage source;
+        QPixmap pixels;
+        QVLayers::Stack layers;
+    };
+    // Costs are in KiB, including both native source and rendered pixels.
+    QCache<QString, SessionComposite> sessionComposites{128 * 1024};
     void saveSessionEdits();
     void restoreSessionEdits(const QString &path);
     bool cropActive = false;

@@ -2,8 +2,34 @@
 
 #include <QPainter>
 #include <QPixmap>
+#include <QColorSpace>
 
 QVFilterEffect::QVFilterEffect(QObject *parent) : QGraphicsEffect(parent) { }
+
+bool QVFilterEffect::restoreComposite(const QPixmap &composite, const QImage &source,
+                                      const QVLayers::Stack &layers)
+{
+    if (composite.isNull() || nativeSource.isNull() || !settings.samePixels(layers)) return false;
+    const QImage current = nativeSource.toImage();
+    // Decoding creates new pixmap keys. Compare actual pixels and color space so
+    // reloads, replaced files, and color-management changes cannot reuse stale edits.
+    if (source.colorSpace() != current.colorSpace() || source != current) return false;
+    cachedPixmap = composite;
+    cachedSourceKey = nativeSource.cacheKey();
+    cacheDirty = false;
+    sourceDirty = false;
+    update();
+    return true;
+}
+
+void QVFilterEffect::setSourcePixmap(const QPixmap &pixmap)
+{
+    if (nativeSource.cacheKey() == pixmap.cacheKey()) return;
+    nativeSource = pixmap;
+    cacheDirty = true;
+    sourceDirty = true;
+    update();
+}
 
 void QVFilterEffect::setLayerStack(const QVLayers::Stack &newSettings)
 {
@@ -81,30 +107,39 @@ QRectF QVFilterEffect::boundingRectFor(const QRectF &rect) const
 
 void QVFilterEffect::draw(QPainter *painter)
 {
+    const bool fixedSource = !nativeSource.isNull();
+    const auto drawNative = [&](const QPixmap &pixmap, bool cropped) {
+        const QRectF sourceRect = sourceBoundingRect(Qt::LogicalCoordinates);
+        const QRectF target = cropped ? boundingRectFor(sourceRect) : sourceRect;
+        painter->save();
+        painter->setRenderHint(QPainter::SmoothPixmapTransform, smoothScaling);
+        painter->drawPixmap(target, pixmap, QRectF(pixmap.rect()));
+        painter->restore();
+    };
     if (compareOriginal || settings.isNeutral()) {
-        drawSource(painter);
+        if (fixedSource) drawNative(nativeSource, false);
+        else drawSource(painter);
         return;
     }
 
-    // Pixmap source notifications may be deferred until scene updates run.
-    // Its cheap content key also catches replacements before that notification.
-    if (cacheDirty || sourceDirty || sourceIsPixmap() || cachedPixmap.isNull()) {
-        const QPixmap source = sourcePixmap(Qt::LogicalCoordinates, &cachedOffset, NoPad);
-        if (source.isNull())
-            return;
-        // Logical pixmap pixels can stay identical through view transforms and
-        // source invalidation notifications. Reuse the composite in that case.
+    // A native still-image composite is independent of viewport movement and
+    // display-pixmap resampling. Only actual pixel edits invalidate it.
+    if (cacheDirty || cachedPixmap.isNull()
+            || (!fixedSource && (sourceDirty || sourceIsPixmap()))) {
+        const QPixmap source = fixedSource ? nativeSource
+                : sourcePixmap(Qt::LogicalCoordinates, &cachedOffset, NoPad);
+        if (source.isNull()) return;
         sourceDirty = false;
-        if (!cacheDirty && !cachedPixmap.isNull() && source.cacheKey() == cachedSourceKey) {
-            painter->drawPixmap(QPointF(cachedOffset) + canvasOffset, cachedPixmap);
-            return;
+        if (cacheDirty || cachedPixmap.isNull() || source.cacheKey() != cachedSourceKey) {
+            cachedSourceKey = source.cacheKey();
+            const QRect bounds = QVLayers::canvasPixels(source.size(), settings.canvas);
+            canvasOffset = settings.hasCanvas() ? QPointF(bounds.topLeft()) / source.devicePixelRatio() : QPointF();
+            ++compositions;
+            cachedPixmap = QPixmap::fromImage(QVLayers::apply(source.toImage(), settings));
+            cachedPixmap.setDevicePixelRatio(source.devicePixelRatio());
+            cacheDirty = false;
         }
-        cachedSourceKey = source.cacheKey();
-        const QRect bounds = QVLayers::canvasPixels(source.size(), settings.canvas);
-        canvasOffset = settings.hasCanvas() ? QPointF(bounds.topLeft()) / source.devicePixelRatio() : QPointF();
-        cachedPixmap = QPixmap::fromImage(QVLayers::apply(source.toImage(), settings));
-        cachedPixmap.setDevicePixelRatio(source.devicePixelRatio());
-        cacheDirty = false;
     }
-    painter->drawPixmap(QPointF(cachedOffset) + canvasOffset, cachedPixmap);
+    if (fixedSource) drawNative(cachedPixmap, true);
+    else painter->drawPixmap(QPointF(cachedOffset) + canvasOffset, cachedPixmap);
 }

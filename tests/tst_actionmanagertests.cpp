@@ -63,6 +63,9 @@ private slots:
     void testCanvasCrop();
     void testDistortCache();
     void testBrushZoom();
+    void testEditedCanvasNavigationCost();
+    void testNativeComposite();
+    void testSessionComposite();
     void testLayersHud();
     void testLayersHudCursor();
     void testDialogToggleShortcuts();
@@ -491,6 +494,164 @@ void ActionManagerTests::testCanvasCopy()
     QCOMPARE(canvas->transform(), viewTransform);
     QCOMPARE(canvas->mapToScene(canvas->viewport()->rect().center()), center);
     canvas->setCompareOriginal(false);
+}
+
+void ActionManagerTests::testSessionComposite()
+{
+    QTemporaryDir directory;
+    QImage image(800, 600, QImage::Format_RGB32);
+    image.fill(QColor(60,100,140));
+    const auto first = directory.filePath("a.png"), next = directory.filePath("b.png");
+    QVERIFY(image.save(first));
+    QVERIFY(image.save(next));
+    QVGraphicsView canvas;
+    canvas.resize(640, 480);
+    canvas.show();
+    canvas.loadFile(first);
+    QTRY_VERIFY(canvas.canDistort());
+    canvas.layerModel()->addFilter();
+    auto layer = canvas.layerModel()->stack().layers[0];
+    layer.filter.brightness = 20;
+    canvas.layerModel()->update(layer);
+    QImage output(canvas.viewport()->size(), QImage::Format_ARGB32);
+    const auto paint = [&] { output.fill(Qt::transparent); canvas.viewport()->render(&output); };
+    const auto effect = [&]() -> QVFilterEffect * {
+        for (auto *item : canvas.scene()->items())
+            if (item->graphicsEffect()) return static_cast<QVFilterEffect *>(item->graphicsEffect());
+        return nullptr;
+    };
+    paint();
+    QVERIFY(effect());
+    QCOMPARE(effect()->compositionCount(), quint64(1));
+    const auto expected = effect()->cachedComposite().toImage();
+    canvas.goToFile(QVGraphicsView::GoToFileMode::next);
+    QTRY_COMPARE(canvas.getCurrentMedia().fileInfo.absoluteFilePath(), next);
+    QTRY_VERIFY(canvas.canDistort());
+    paint();
+    QElapsedTimer elapsed;
+    elapsed.start();
+    canvas.goToFile(QVGraphicsView::GoToFileMode::previous);
+    QTRY_COMPARE(canvas.getCurrentMedia().fileInfo.absoluteFilePath(), first);
+    QTRY_VERIFY(canvas.canDistort());
+    paint();
+    QVERIFY(effect());
+    QCOMPARE(effect()->compositionCount(), quint64(0));
+    QCOMPARE(effect()->cachedComposite().toImage(), expected);
+    qInfo() << "Returning to edited image:" << elapsed.elapsed() << "ms, zero recomposites";
+    // A replacement with identical dimensions must invalidate the saved composite.
+    image.fill(Qt::yellow);
+    QVERIFY(image.save(first));
+    canvas.reloadFile();
+    QTRY_VERIFY(canvas.canDistort());
+    paint();
+    QVERIFY(effect()->compositionCount() > 0);
+    QVERIFY(effect()->cachedComposite().toImage() != expected);
+}
+
+void ActionManagerTests::testNativeComposite()
+{
+    QImage source(80, 60, QImage::Format_ARGB32);
+    for (int y = 0; y < 60; ++y) for (int x = 0; x < 80; ++x)
+        source.setPixel(x, y, qRgba(x*3,y*4,90,255));
+    QGraphicsScene scene;
+    auto *item = scene.addPixmap(QPixmap::fromImage(source.scaled(40, 30)));
+    auto *effect = new QVFilterEffect;
+    item->setGraphicsEffect(effect);
+    effect->setSourcePixmap(QPixmap::fromImage(source));
+    effect->setSmoothScaling(false);
+    QVLayers::Stack stack;
+    QVLayers::Layer filter;
+    filter.kind = QVLayers::Kind::Filter;
+    filter.filter.brightness = 12;
+    stack.layers.prepend(filter);
+    stack.canvas = QRectF(-.25, 0, 1.5, 1.5);
+    effect->setLayerStack(stack);
+    const auto paint = [&](const QRect &bounds, const QSize &displaySize) {
+        QImage result(bounds.size(), QImage::Format_ARGB32);
+        result.fill(Qt::transparent);
+        QPainter painter(&result);
+        const double sx = double(displaySize.width())/source.width();
+        const double sy = double(displaySize.height())/source.height();
+        scene.render(&painter, QRectF(result.rect()), QRectF(bounds.x()*sx, bounds.y()*sy,
+                     bounds.width()*sx, bounds.height()*sy));
+        return result;
+    };
+    const auto bounds = QVLayers::canvasPixels(source.size(), stack.canvas);
+    const auto expected = QVLayers::apply(source, stack);
+    QCOMPARE(paint(bounds, QSize(40,30)), expected);
+    const auto count = effect->compositionCount();
+    // Different display pixels and size must not change the native composite.
+    item->setPixmap(QPixmap::fromImage(source.scaled(160,120)));
+    QCOMPARE(paint(bounds, QSize(160,120)), expected);
+    QCOMPARE(effect->compositionCount(), count);
+    effect->setCompareOriginal(true);
+    QCOMPARE(paint(source.rect(), QSize(160,120)), source);
+    effect->setCompareOriginal(false);
+    QCOMPARE(paint(bounds, QSize(160,120)), expected);
+    QCOMPARE(effect->compositionCount(), count);
+    source.fill(Qt::green);
+    effect->setSourcePixmap(QPixmap::fromImage(source));
+    QCOMPARE(paint(bounds, QSize(160,120)), QVLayers::apply(source, stack));
+    QCOMPARE(effect->compositionCount(), count+1);
+}
+
+void ActionManagerTests::testEditedCanvasNavigationCost()
+{
+    QTemporaryDir directory;
+    QImage image(1200, 900, QImage::Format_RGB32);
+    image.fill(QColor(80,120,160));
+    const auto path = directory.filePath("performance.png");
+    QVERIFY(image.save(path));
+    QVGraphicsView canvas;
+    canvas.resize(800, 600);
+    canvas.show();
+    canvas.loadFile(path);
+    QTRY_VERIFY(canvas.canDistort());
+    for (int n = 0; n < 3; ++n) {
+        const auto id = canvas.layerModel()->addFilter();
+        auto layer = canvas.layerModel()->stack().layers[canvas.layerModel()->indexOf(id)];
+        layer.filter.brightness = 10;
+        layer.filter.contrast = 15;
+        layer.filter.saturation = -20;
+        canvas.layerModel()->update(layer);
+    }
+    canvas.layerModel()->addDistort();
+    auto layer = canvas.layerModel()->stack().layers[0];
+    QVLayers::DistortStroke stroke;
+    stroke.radius = .2;
+    stroke.points = {QPointF(.4,.5), QPointF(.55,.5)};
+    layer.strokes.append(stroke);
+    canvas.layerModel()->update(layer);
+    QImage output(canvas.viewport()->size(), QImage::Format_ARGB32);
+    const auto paint = [&] { output.fill(Qt::transparent); canvas.viewport()->render(&output); };
+    paint();
+    QVFilterEffect *effect = nullptr;
+    for (auto *item : canvas.scene()->items())
+        if (item->graphicsEffect()) effect = static_cast<QVFilterEffect *>(item->graphicsEffect());
+    QVERIFY(effect);
+    const auto before = effect->compositionCount();
+    QElapsedTimer elapsed;
+    elapsed.start();
+    for (int n = 0; n < 16; ++n) {
+        canvas.horizontalScrollBar()->setValue(canvas.horizontalScrollBar()->value()+12);
+        paint();
+        canvas.zoom(n%2 ? 1/1.12 : 1.12);
+        canvas.scaleExpensively();
+        paint();
+    }
+    qInfo() << "Edited canvas: 16 pan/zoom steps:" << elapsed.elapsed() << "ms; recomposites:"
+            << effect->compositionCount()-before;
+    QCOMPARE(effect->compositionCount(), before);
+    canvas.setCompareOriginal(true);
+    paint();
+    canvas.setCompareOriginal(false);
+    paint();
+    QCOMPARE(effect->compositionCount(), before);
+    auto edited = canvas.layerModel()->stack().layers[1];
+    edited.filter.brightness += 5;
+    canvas.layerModel()->update(edited);
+    paint();
+    QCOMPARE(effect->compositionCount(), before+1);
 }
 
 void ActionManagerTests::testBrushZoom()
