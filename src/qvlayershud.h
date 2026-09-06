@@ -5,11 +5,9 @@
 #include <QFrame>
 
 class QLabel;
-class QLineEdit;
 class QListWidget;
 class QComboBox;
 class QSlider;
-class QSpinBox;
 class QToolButton;
 
 // Floating viewport siblings: QGraphicsView scrolls viewport children with the
@@ -64,7 +62,10 @@ signals:
     void filtersRequested(quint64 id);
     void exportRequested();
     void resetViewRequested();
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
 private:
+    void showLayerMenu(const QPoint &position);
     void refresh();
     void select(quint64 id);
     void loadSelection();
@@ -77,10 +78,9 @@ private:
     QVOverlayPanel *toolbar;
     QListWidget *list;
     QLabel *sourceLabel;
-    QLineEdit *name;
     QComboBox *blend;
     QSlider *strength;
-    QSpinBox *strengthValue;
+    QLabel *strengthValue;
     QToolButton *removeButton;
     QToolButton *upButton;
     QToolButton *downButton;

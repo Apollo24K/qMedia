@@ -1,20 +1,24 @@
 #include "qvlayershud.h"
 #include <QApplication>
+#include <QAction>
+#include <QChildEvent>
+#include <QStyle>
+#include <QStyleOptionViewItem>
 #include <QComboBox>
 #include <QDragEnterEvent>
 #include <QDropEvent>
-#include <QFormLayout>
 #include <QKeyEvent>
 #include <QLabel>
-#include <QLineEdit>
 #include <QListWidget>
 #include <QMouseEvent>
-#include <QScrollArea>
+#include <QMenu>
+#include <QPainter>
+#include <QStyledItemDelegate>
+#include <QWheelEvent>
 #include <QScrollBar>
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QSlider>
-#include <QSpinBox>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <functional>
@@ -38,13 +42,99 @@ QToolButton *button(QWidget *parent, const QString &glyph, const QString &tip, c
     return result;
 }
 
+class StrengthSlider : public QSlider
+{
+public:
+    explicit StrengthSlider(QWidget *parent) : QSlider(Qt::Horizontal, parent) { }
+protected:
+    void wheelEvent(QWheelEvent *event) override
+    {
+        remainder += event->angleDelta().y() ? event->angleDelta().y() : event->angleDelta().x();
+        setValue(value() + remainder / 120);
+        remainder %= 120;
+        event->accept();
+    }
+private:
+    int remainder = 0;
+};
+
+class ElidedLabel : public QLabel
+{
+public:
+    explicit ElidedLabel(QWidget *parent) : QLabel(parent) { }
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setPen(palette().color(QPalette::WindowText));
+        painter.drawText(rect(), Qt::AlignVCenter | Qt::AlignLeft,
+                         fontMetrics().elidedText(text(), Qt::ElideMiddle, width()));
+    }
+};
+
+class LayerDelegate : public QStyledItemDelegate
+{
+public:
+    explicit LayerDelegate(QObject *parent) : QStyledItemDelegate(parent) { }
+    QRect iconRect(const QModelIndex &index, const QRect &rect, const QListWidget *view) const
+    {
+        QStyleOptionViewItem option;
+        option.initFrom(view);
+        option.widget = view;
+        option.decorationSize = view->iconSize();
+        initStyleOption(&option, index);
+        option.rect = rect;
+        return view->style()->subElementRect(QStyle::SE_ItemViewItemDecoration, &option, view);
+    }
+};
+
 class LayerList : public QListWidget
 {
 public:
-    explicit LayerList(QWidget *parent) : QListWidget(parent) { }
+    explicit LayerList(QWidget *parent) : QListWidget(parent)
+    {
+        setIconSize(QSize(18, 18));
+        setItemDelegate(new LayerDelegate(this));
+    }
+    std::function<void(quint64)> iconClicked;
     std::function<void(quint64, int)> moved;
     std::function<void()> removed;
 protected:
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        pressedIcon = 0;
+        auto *item = itemAt(event->pos());
+        if (event->button() == Qt::LeftButton && item && item->data(Qt::UserRole + 1).toBool()
+                && decorationRect(item).contains(event->pos())) {
+            setCurrentItem(item);
+            pressedIcon = item->data(Qt::UserRole).toULongLong();
+            event->accept();
+            return;
+        }
+        QListWidget::mousePressEvent(event);
+    }
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (pressedIcon) {
+            const auto id = pressedIcon;
+            pressedIcon = 0;
+            auto *item = itemAt(event->pos());
+            if (item && item->data(Qt::UserRole).toULongLong() == id
+                    && decorationRect(item).contains(event->pos()) && iconClicked) iconClicked(id);
+            event->accept();
+            return;
+        }
+        QListWidget::mouseReleaseEvent(event);
+    }
+    void mouseDoubleClickEvent(QMouseEvent *event) override
+    {
+        auto *item = itemAt(event->pos());
+        if (item && item->data(Qt::UserRole + 1).toBool() && decorationRect(item).contains(event->pos())) {
+            event->accept();
+            return;
+        }
+        QListWidget::mouseDoubleClickEvent(event);
+    }
     void dropEvent(QDropEvent *event) override
     {
         if (event->source() != this || !currentItem()) { event->ignore(); return; }
@@ -90,6 +180,12 @@ protected:
             event->accept();
         } else QListWidget::keyPressEvent(event);
     }
+private:
+    quint64 pressedIcon = 0;
+    QRect decorationRect(QListWidgetItem *item) const
+    {
+        return static_cast<LayerDelegate *>(itemDelegate())->iconRect(indexFromItem(item), visualItemRect(item), this);
+    }
 };
 }
 
@@ -103,6 +199,9 @@ QVOverlayPanel::QVOverlayPanel(QWidget *viewport, bool canResize, bool right)
         "QFrame#layersOverlay { background: rgba(32,35,41,246); border: 1px solid #454a54; border-radius: 9px; }"
         "QWidget { color: #e0e4ec; font-size: 12px; }"
         "QLabel, QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; border: none; }"
+        "QMenu { background: #202329; border: 1px solid #454a54; padding: 4px; }"
+        "QMenu::item { padding: 5px 20px; } QMenu::item:selected { background: #3b4b65; }"
+        "QMenu::item:disabled { color: #77808e; }"
         "QToolButton { border: none; border-radius: 5px; background: transparent; }"
         "QToolButton:hover, QPushButton:hover { background: #424a59; }"
         "QToolButton:pressed { background: #52617a; }"
@@ -201,6 +300,7 @@ void QVOverlayPanel::beginDrag(QMouseEvent *event, bool handle)
     resizing = handle ? Qt::Edges() : edgesAt(event->pos());
     if (!handle && !resizing) return;
     dragging = true;
+    if (handle) setCursor(Qt::SizeAllCursor);
     dragOrigin = event->globalPos();
     dragGeometry = geometry().translated(-viewport->pos());
     grabMouse();
@@ -236,6 +336,7 @@ void QVOverlayPanel::finishDrag()
     dragging = false;
     releaseMouse();
     resizing = {};
+    setCursor(Qt::ArrowCursor);
     const QSize bounds = viewport->size();
     const QRect relative = geometry().translated(-viewport->pos());
     if (qAbs(relative.x() - margin) < snapDistance) horizontalAnchor = 1;
@@ -260,6 +361,16 @@ bool QVOverlayPanel::eventFilter(QObject *watched, QEvent *event)
 
 bool QVOverlayPanel::event(QEvent *event)
 {
+    if (event->type() == QEvent::ChildPolished) {
+        // Edge cursors belong to the frame, not its contents. Qt need not send
+        // another frame mouseMove when entering a child, so inheritance can
+        // otherwise leave the resize cursor over lists, sliders, and buttons.
+        auto *child = qobject_cast<QWidget *>(static_cast<QChildEvent *>(event)->child());
+        if (child && !child->testAttribute(Qt::WA_SetCursor))
+            child->setCursor(Qt::ArrowCursor);
+    }
+    if ((event->type() == QEvent::Leave && !dragging) || event->type() == QEvent::Hide)
+        setCursor(Qt::ArrowCursor);
     if (event->type() == QEvent::ShortcutOverride) {
         const int key = static_cast<QKeyEvent *>(event)->key();
         if (key == Qt::Key_Left || key == Qt::Key_Right || key == Qt::Key_Up
@@ -311,17 +422,45 @@ QVLayersHud::QVLayersHud(QVLayerModel *layerModel, QWidget *viewport)
     title->setStyleSheet("font-weight: 600; font-size: 13px;");
     title->setMinimumHeight(27);
     panel->setDragHandle(title);
-    header->addWidget(title, 1);
-    auto *close = button(panel, "close", tr("Hide Layers HUD"), "layersClose");
-    header->addWidget(close);
-    layout->addLayout(header);
-    sourceLabel = new QLabel(panel);
+    header->addWidget(title);
+    sourceLabel = new ElidedLabel(panel);
     sourceLabel->setObjectName("layersSource");
     sourceLabel->setStyleSheet("color: #a3acba; font-size: 11px;");
     sourceLabel->setTextFormat(Qt::PlainText);
     sourceLabel->setMinimumWidth(0);
-    sourceLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-    layout->addWidget(sourceLabel);
+    sourceLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    panel->setDragHandle(sourceLabel);
+    header->addWidget(sourceLabel, 1);
+    auto *close = button(panel, "close", tr("Hide Layers HUD"), "layersClose");
+    header->addWidget(close);
+    layout->addLayout(header);
+
+    properties = new QWidget(panel);
+    auto *propertyLayout = new QHBoxLayout(properties);
+    propertyLayout->setContentsMargins(0, 0, 0, 0);
+    propertyLayout->setSpacing(6);
+    strength = new StrengthSlider(properties);
+    strength->setObjectName("layerStrength");
+    strength->setAccessibleName(tr("Layer strength"));
+    strength->setToolTip(tr("Layer strength · Scroll to adjust by 1%"));
+    strength->setRange(0, 100);
+    strength->setMinimumWidth(35);
+    strengthValue = new QLabel(properties);
+    strengthValue->setObjectName("layerStrengthValue");
+    strengthValue->setAccessibleName(tr("Layer strength percentage"));
+    strengthValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    strengthValue->setFixedWidth(strengthValue->fontMetrics().horizontalAdvance("100%") + 4);
+    strengthValue->setToolTip(strength->toolTip());
+    strengthValue->installEventFilter(this);
+    blend = new QComboBox(properties);
+    blend->setObjectName("layerBlend");
+    blend->setAccessibleName(tr("Blend mode"));
+    blend->setToolTip(tr("Blend mode"));
+    blend->addItems({ tr("Normal"), tr("Multiply"), tr("Screen"), tr("Overlay"), tr("Darken"), tr("Lighten") });
+    propertyLayout->addWidget(strength, 1);
+    propertyLayout->addWidget(strengthValue);
+    propertyLayout->addWidget(blend);
+    layout->addWidget(properties);
 
     auto *layerList = new LayerList(panel);
     list = layerList;
@@ -348,44 +487,6 @@ QVLayersHud::QVLayersHud(QVLayerModel *layerModel, QWidget *viewport)
     actions->addWidget(upButton);
     actions->addWidget(downButton);
     layout->addLayout(actions);
-
-    auto *scroll = new QScrollArea(panel);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setMinimumSize(0, 50);
-    properties = new QWidget(scroll);
-    auto *propertyLayout = new QVBoxLayout(properties);
-    propertyLayout->setContentsMargins(0, 0, 2, 0);
-    auto *form = new QFormLayout;
-    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-    name = new QLineEdit(properties);
-    name->setObjectName("layerName");
-    name->setMaxLength(120);
-    name->setAccessibleName(tr("Layer name"));
-    form->addRow(tr("Name"), name);
-    blend = new QComboBox(properties);
-    blend->setObjectName("layerBlend");
-    blend->setAccessibleName(tr("Blend mode"));
-    blend->addItems({ tr("Normal"), tr("Multiply"), tr("Screen"), tr("Overlay"), tr("Darken"), tr("Lighten") });
-    form->addRow(tr("Blend"), blend);
-    auto *strengthRow = new QHBoxLayout;
-    strength = new QSlider(Qt::Horizontal, properties);
-    strength->setObjectName("layerStrength");
-    strength->setAccessibleName(tr("Layer strength"));
-    strength->setRange(0, 100);
-    strengthValue = new QSpinBox(properties);
-    strengthValue->setObjectName("layerStrengthValue");
-    strengthValue->setRange(0, 100);
-    strengthValue->setSuffix(" %");
-    strengthValue->setButtonSymbols(QAbstractSpinBox::NoButtons);
-    strengthValue->setFixedWidth(54);
-    strengthRow->addWidget(strength, 1);
-    strengthRow->addWidget(strengthValue);
-    form->addRow(tr("Strength"), strengthRow);
-    propertyLayout->addLayout(form);
-    propertyLayout->addStretch();
-    scroll->setWidget(properties);
-    layout->addWidget(scroll, 2);
 
     toolbar = new QVOverlayPanel(viewport, false, false);
     toolbar->setAccessibleName(tr("Editing tools"));
@@ -414,6 +515,9 @@ QVLayersHud::QVLayersHud(QVLayerModel *layerModel, QWidget *viewport)
     connect(add, &QToolButton::clicked, this, &QVLayersHud::addFilter);
     connect(duplicate, &QToolButton::clicked, this, [this] { select(model->duplicate(selectedId())); });
     connect(removeButton, &QToolButton::clicked, this, [this] { model->remove(selectedId()); });
+    list->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(list, &QWidget::customContextMenuRequested, this, &QVLayersHud::showLayerMenu);
+    layerList->iconClicked = [this](quint64 id) { emit filtersRequested(id); };
     layerList->removed = [this] { model->remove(selectedId()); };
     layerList->moved = [this](quint64 id, int index) { model->move(id, index); select(id); };
     connect(upButton, &QToolButton::clicked, this, [this] { moveSelection(-1); });
@@ -428,10 +532,8 @@ QVLayersHud::QVLayersHud(QVLayerModel *layerModel, QWidget *viewport)
         layer.visible = item->checkState() == Qt::Checked;
         model->update(layer);
     });
-    connect(name, &QLineEdit::editingFinished, this, &QVLayersHud::updateSelection);
     connect(blend, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &QVLayersHud::updateSelection);
-    connect(strength, &QSlider::valueChanged, strengthValue, &QSpinBox::setValue);
-    connect(strengthValue, QOverload<int>::of(&QSpinBox::valueChanged), strength, &QSlider::setValue);
+    connect(strength, &QSlider::valueChanged, this, [this](int value) { strengthValue->setText(QString::number(value) + "%"); });
     connect(strength, &QSlider::valueChanged, this, &QVLayersHud::updateSelection);
     connect(model, &QVLayerModel::changed, this, &QVLayersHud::refresh);
     panel->restorePlacement("layersHud/panel", QSize(292, 490));
@@ -499,11 +601,12 @@ void QVLayersHud::refresh()
         const auto &layer = model->stack().layers[i];
         auto *item = rebuild ? new QListWidgetItem(list) : list->item(i);
         item->setData(Qt::UserRole, QVariant::fromValue(layer.id));
+        item->setData(Qt::UserRole + 1, layer.kind == QVLayers::Kind::Filter);
         item->setText(layer.name);
         item->setIcon(icon(layer.kind == QVLayers::Kind::Source ? "source" : "filter"));
         item->setCheckState(layer.visible ? Qt::Checked : Qt::Unchecked);
         item->setFlags(item->flags() | Qt::ItemIsEditable | Qt::ItemIsUserCheckable | Qt::ItemIsDragEnabled);
-        item->setToolTip(layer.kind == QVLayers::Kind::Source ? tr("Live source media") : tr("Adjusts the layers below"));
+        item->setToolTip(layer.kind == QVLayers::Kind::Source ? tr("Live source media") : tr("Click the filter icon to edit · Adjusts the layers below"));
     }
     if (rebuild) { select(id); if (!list->currentItem()) list->setCurrentRow(qBound(0, row, list->count() - 1)); }
     loading = false;
@@ -517,9 +620,9 @@ void QVLayersHud::loadSelection()
     if (index < 0) return;
     loading = true;
     const auto &layer = model->stack().layers[index];
-    name->setText(layer.name);
     blend->setCurrentIndex(int(layer.blend));
     strength->setValue(layer.strength);
+    strengthValue->setText(QString::number(layer.strength) + "%");
     int sources = 0;
     for (const auto &entry : model->stack().layers) sources += entry.kind == QVLayers::Kind::Source;
     removeButton->setEnabled(list->isEnabled() && (layer.kind == QVLayers::Kind::Filter || sources > 1));
@@ -536,7 +639,6 @@ void QVLayersHud::updateSelection()
     const int index = model->indexOf(selectedId());
     if (index < 0) return;
     auto layer = model->stack().layers[index];
-    layer.name = name->text();
     layer.blend = QVLayers::Blend(blend->currentIndex());
     layer.strength = strength->value();
     model->update(layer);
@@ -548,4 +650,62 @@ void QVLayersHud::moveSelection(int offset)
     const auto id = selectedId();
     model->move(id, model->indexOf(id) + offset);
     select(id);
+}
+
+bool QVLayersHud::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == strengthValue && event->type() == QEvent::Wheel) {
+        if (strength->isEnabled()) QApplication::sendEvent(strength, event);
+        event->accept();
+        return true;
+    }
+    return QObject::eventFilter(watched, event);
+}
+
+void QVLayersHud::showLayerMenu(const QPoint &position)
+{
+    auto *item = list->itemAt(position);
+    if (!item || !list->isEnabled()) return;
+    list->setCurrentItem(item);
+    const quint64 id = selectedId();
+    const int index = model->indexOf(id);
+    if (index < 0) return;
+    const auto layer = model->stack().layers[index];
+    auto *menu = new QMenu(panel);
+    menu->setObjectName("layerContextMenu");
+    connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+    auto addAction = [menu, this](const QString &text, const QString &name, const std::function<void()> &run) {
+        auto *action = menu->addAction(text);
+        action->setObjectName(name);
+        connect(action, &QAction::triggered, this, run);
+        return action;
+    };
+    if (layer.kind == QVLayers::Kind::Filter) {
+        addAction(tr("Edit filter..."), "layerEditFilter", [this, id] {
+            if (model->indexOf(id) >= 0) emit filtersRequested(id);
+        });
+        menu->addSeparator();
+    }
+    addAction(tr("Rename"), "layerRename", [this, id] {
+        if (model->indexOf(id) < 0) return;
+        select(id);
+        list->editItem(list->currentItem());
+    });
+    addAction(tr("Duplicate"), "layerDuplicate", [this, id] { select(model->duplicate(id)); });
+    addAction(layer.visible ? tr("Hide") : tr("Show"), "layerToggleVisibility", [this, id] {
+        const int index = model->indexOf(id);
+        if (index < 0) return;
+        auto layer = model->stack().layers[index];
+        layer.visible = !layer.visible;
+        model->update(layer);
+    });
+    menu->addSeparator();
+    addAction(tr("Move up"), "layerMoveUp", [this, id] { model->move(id, model->indexOf(id) - 1); })
+            ->setEnabled(index > 0);
+    addAction(tr("Move down"), "layerMoveDown", [this, id] { model->move(id, model->indexOf(id) + 1); })
+            ->setEnabled(index < model->stack().layers.size() - 1);
+    menu->addSeparator();
+    addAction(tr("Remove"), "layerRemove", [this, id] { model->remove(id); })
+            ->setEnabled(removeButton->isEnabled());
+    menu->popup(list->viewport()->mapToGlobal(position));
 }

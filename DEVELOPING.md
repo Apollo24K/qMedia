@@ -73,7 +73,10 @@ or change its pan and zoom. L continues to toggle looping.
 
 The stack is displayed top to bottom, with higher layers composited over lower
 ones. Drag rows or use the arrow buttons to reorder. Double-click a name (or use
-F2), click an eye to change visibility, and use the duplicate and remove buttons
+F2), click an eye to change visibility, and right-click a layer for its actions.
+Click a filter layer's icon to open its Filters window. The compact row above the
+list contains strength and blend mode; scroll over the slider or percentage to
+adjust strength in 1% steps. The percentage is read-only. Use the duplicate and remove buttons
 to manage layers. Delete removes the selected layer while the list has focus;
 Space toggles its visibility. The last source layer is kept and can be hidden.
 Each layer has strength and Normal, Multiply, Screen, Overlay, Darken, and Lighten

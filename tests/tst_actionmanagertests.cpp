@@ -9,6 +9,9 @@
 #include <QListWidget>
 #include <QToolButton>
 #include <QScrollBar>
+#include <QContextMenuEvent>
+#include <QStyledItemDelegate>
+#include <QStyleOptionViewItem>
 #include <QComboBox>
 #include <QSpinBox>
 #include <QCheckBox>
@@ -46,6 +49,7 @@ private slots:
     void testExportCanvasState();
     void testFilterControlsWheelStep();
     void testLayersHud();
+    void testLayersHudCursor();
     void testDialogToggleShortcuts();
 };
 
@@ -145,6 +149,72 @@ void ActionManagerTests::testLayersHud()
     auto *strength = canvas->findChild<QSlider *>("layerStrength");
     strength->setValue(50);
     QCOMPARE(canvas->layerModel()->stack().layers[0].strength, 50);
+    auto *percent = canvas->findChild<QLabel *>("layerStrengthValue");
+    auto *blend = canvas->findChild<QComboBox *>("layerBlend");
+    auto *filename = canvas->findChild<QLabel *>("layersSource");
+    QVERIFY(percent && blend && filename);
+    QVERIFY(!canvas->findChild<QLineEdit *>("layerName"));
+    QVERIFY(!canvas->findChild<QSpinBox *>("layerStrengthValue"));
+    QCOMPARE(percent->text(), QString("50%"));
+    QCoreApplication::processEvents();
+    QVERIFY(strength->mapTo(rightPanel, QPoint()).y() < list->y());
+    QCOMPARE(percent->mapTo(rightPanel, percent->rect().center()).y(),
+             blend->mapTo(rightPanel, blend->rect().center()).y());
+    QCOMPARE(filename->mapTo(rightPanel, filename->rect().center()).y(),
+             rightPanel->findChild<QToolButton *>("layersClose")->geometry().center().y());
+    QVERIFY(list->height() > rightPanel->height() * 0.65);
+    auto wheel = [](QWidget *widget, int delta) {
+        QWheelEvent event(QPointF(5, 5), QPointF(widget->mapToGlobal(QPoint(5, 5))),
+                          QPoint(), QPoint(0, delta), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(widget, &event);
+        QVERIFY(event.isAccepted());
+    };
+    wheel(percent, 60);
+    QCOMPARE(strength->value(), 50);
+    wheel(percent, 60);
+    QCOMPARE(strength->value(), 51);
+    wheel(strength, -120);
+    QCOMPARE(strength->value(), 50);
+    QCOMPARE(canvas->layerModel()->stack().layers[0].strength, 50);
+    const quint64 filterId = hud->selectedLayerId();
+    struct Inspector : QStyledItemDelegate { using QStyledItemDelegate::initStyleOption; } inspector;
+    QStyleOptionViewItem option;
+    option.initFrom(list);
+    option.widget = list;
+    option.decorationSize = list->iconSize();
+    inspector.initStyleOption(&option, list->currentIndex());
+    option.rect = list->visualItemRect(list->currentItem());
+    const QRect iconRect = list->style()->subElementRect(QStyle::SE_ItemViewItemDecoration, &option, list);
+    QSignalSpy filterRequests(hud, &QVLayersHud::filtersRequested);
+    QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, iconRect.center());
+    QCOMPARE(filterRequests.count(), 1);
+    QCOMPARE(filterRequests.first().first().toULongLong(), filterId);
+    QVERIFY(dialog->isVisible());
+    window.showFilters();
+    auto contextMenu = [list, rightPanel](int row) {
+        const QPoint position = list->visualItemRect(list->item(row)).center();
+        QContextMenuEvent event(QContextMenuEvent::Mouse, position, list->viewport()->mapToGlobal(position));
+        QApplication::sendEvent(list->viewport(), &event);
+        return rightPanel->findChild<QMenu *>("layerContextMenu");
+    };
+    auto *sourceMenu = contextMenu(1);
+    QVERIFY(sourceMenu);
+    QVERIFY(!sourceMenu->findChild<QAction *>("layerRemove")->isEnabled());
+    QVERIFY(!sourceMenu->findChild<QAction *>("layerEditFilter"));
+    sourceMenu->close();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    auto *filterMenu = contextMenu(0);
+    QVERIFY(filterMenu);
+    QVERIFY(filterMenu->findChild<QAction *>("layerEditFilter"));
+    QVERIFY(filterMenu->findChild<QAction *>("layerRename"));
+    filterMenu->findChild<QAction *>("layerDuplicate")->trigger();
+    QCOMPARE(list->count(), 3);
+    const quint64 duplicateId = hud->selectedLayerId();
+    QVERIFY(duplicateId != filterId);
+    filterMenu->close();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    canvas->layerModel()->remove(duplicateId);
+    list->setCurrentRow(0);
     list->currentItem()->setText("Warm light");
     QCOMPARE(canvas->layerModel()->stack().layers[0].name, QString("Warm light"));
     list->currentItem()->setCheckState(Qt::Unchecked);
@@ -191,6 +261,57 @@ void ActionManagerTests::testLayersHud()
                             .arg(panel->minimumWidth()).arg(panel->minimumHeight())));
     }
     hud->setVisible(false);
+}
+
+void ActionManagerTests::testLayersHudCursor()
+{
+    QWidget host;
+    host.resize(800, 600);
+    QWidget viewport(&host);
+    viewport.setGeometry(host.rect());
+    QVLayerModel model;
+    QVLayersHud hud(&model, &viewport);
+    host.show();
+    hud.setVisible(true);
+    QCoreApplication::processEvents();
+    auto *list = host.findChild<QListWidget *>("layersList");
+    auto *panel = qobject_cast<QVOverlayPanel *>(list->parentWidget());
+    auto *slider = host.findChild<QSlider *>("layerStrength");
+    auto *percent = host.findChild<QLabel *>("layerStrengthValue");
+    auto *header = host.findChild<QLabel *>("layersSource");
+    QVERIFY(panel && slider && percent && header);
+    auto move = [panel](const QPoint &position) {
+        QMouseEvent event(QEvent::MouseMove, QPointF(position),
+                          QPointF(panel->mapToGlobal(position)), Qt::NoButton,
+                          Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(panel, &event);
+    };
+    // No intermediate frame move is sent when entering a child from an edge.
+    move(QPoint(2, panel->height() / 2));
+    QCOMPARE(panel->cursor().shape(), Qt::SizeHorCursor);
+    QCOMPARE(list->viewport()->cursor().shape(), Qt::ArrowCursor);
+    QCOMPARE(slider->cursor().shape(), Qt::ArrowCursor);
+    QCOMPARE(percent->cursor().shape(), Qt::ArrowCursor);
+    QCOMPARE(host.findChild<QToolButton *>("layersAddFilter")->cursor().shape(), Qt::ArrowCursor);
+    QCOMPARE(header->cursor().shape(), Qt::SizeAllCursor);
+    list->editItem(list->item(0));
+    QCoreApplication::processEvents();
+    auto *editor = list->findChild<QLineEdit *>();
+    QVERIFY(editor);
+    QCOMPARE(editor->cursor().shape(), Qt::IBeamCursor);
+    move(QPoint(2, 2));
+    QCOMPARE(panel->cursor().shape(), Qt::SizeFDiagCursor);
+    QEvent leave(QEvent::Leave);
+    QApplication::sendEvent(panel, &leave);
+    QCOMPARE(panel->cursor().shape(), Qt::ArrowCursor);
+    move(QPoint(2, panel->height() / 2));
+    QTest::mousePress(panel, Qt::LeftButton, Qt::NoModifier, QPoint(2, panel->height() / 2));
+    QTest::mouseRelease(panel, Qt::LeftButton, Qt::NoModifier, QPoint(2, panel->height() / 2));
+    QCOMPARE(panel->cursor().shape(), Qt::ArrowCursor);
+    move(QPoint(2, 2));
+    hud.setVisible(false);
+    hud.setVisible(true);
+    QCOMPARE(panel->cursor().shape(), Qt::ArrowCursor);
 }
 
 void ActionManagerTests::testDialogToggleShortcuts()
