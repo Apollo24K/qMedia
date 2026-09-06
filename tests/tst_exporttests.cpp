@@ -57,6 +57,7 @@ void ExportTests::distortion()
     stroke.radius = 0.25;
     layer.strokes = { stroke };
     options.layers.layers.prepend(layer);
+    options.layers.canvas = QRectF(-0.25, 0, 1.5, 1.5);
     options.rotation = 90;
     options.mirrored = true;
     options.size = QSize(30, 40);

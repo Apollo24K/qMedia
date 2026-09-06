@@ -60,11 +60,15 @@ public:
     void setSource(const QString &name, bool available);
     void setDistortAvailable(bool available);
     void setDistortActive(bool active);
+    void setCropActive(bool active);
     void setBrushRadius(int radius);
     void selectLayer(quint64 id) { select(id); }
 signals:
     void layerSelected(quint64 id);
     void distortRequested(bool active);
+    void cropRequested(bool active);
+    void cropApplyRequested();
+    void cropResetRequested();
     void distortSizeChanged(int radius);
     void filtersRequested(quint64 id);
     void exportRequested();
@@ -89,6 +93,7 @@ private:
     QSlider *strength;
     QLabel *strengthValue;
     QToolButton *distortButton;
+    QToolButton *cropButton;
     QToolButton *panButton;
     QToolButton *removeButton;
     QToolButton *upButton;

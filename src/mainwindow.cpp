@@ -257,6 +257,15 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     if (isEditor(widget) || (focused && focused->window() == widget->window()
                             && isEditor(focused)))
         return false;
+    if (graphicsView->isCropActive() && key->modifiers() == Qt::NoModifier
+            && (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter || key->key() == Qt::Key_Escape)) {
+        if (event->type() == QEvent::KeyPress && !key->isAutoRepeat()) {
+            if (key->key() == Qt::Key_Escape) graphicsView->setCropActive(false);
+            else graphicsView->applyCrop();
+        }
+        event->accept();
+        return true;
+    }
     const QKeySequence pressed(key->key() | int(key->modifiers()));
     if (graphicsView->isDistortActive() && pressed == QKeySequence(Qt::CTRL | Qt::Key_Z)) {
         if (event->type() == QEvent::KeyPress && !key->isAutoRepeat()) graphicsView->undoDistort();
@@ -267,8 +276,9 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         if (event->type() == QEvent::KeyPress && !key->isAutoRepeat()) {
             distortHeldKey = key->key();
             temporaryDistort = !layersHud || !layersHud->isVisible();
-            graphicsView->setDistortActive(true);
-            if (layersHud) layersHud->setDistortActive(true);
+            const bool active = temporaryDistort || !graphicsView->isDistortActive();
+            graphicsView->setDistortActive(active);
+            if (layersHud) layersHud->setDistortActive(active);
         }
         event->accept();
         return true;
@@ -1326,6 +1336,10 @@ void MainWindow::ensureLayersHud()
     layersHud = new QVLayersHud(graphicsView->layerModel(), graphicsView->viewport());
     connect(layersHud, &QVLayersHud::filtersRequested, this, &MainWindow::openFilters);
     connect(layersHud, &QVLayersHud::distortRequested, graphicsView, &QVGraphicsView::setDistortActive);
+    connect(layersHud, &QVLayersHud::cropRequested, graphicsView, &QVGraphicsView::setCropActive);
+    connect(layersHud, &QVLayersHud::cropApplyRequested, graphicsView, &QVGraphicsView::applyCrop);
+    connect(layersHud, &QVLayersHud::cropResetRequested, graphicsView, &QVGraphicsView::resetCrop);
+    connect(graphicsView, &QVGraphicsView::cropActiveChanged, layersHud, &QVLayersHud::setCropActive);
     connect(layersHud, &QVLayersHud::layerSelected, graphicsView, &QVGraphicsView::setDistortLayer);
     connect(layersHud, &QVLayersHud::distortSizeChanged, graphicsView, &QVGraphicsView::setDistortRadius);
     connect(graphicsView, &QVGraphicsView::distortLayerCreated, layersHud, &QVLayersHud::selectLayer);

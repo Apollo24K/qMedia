@@ -104,7 +104,7 @@ bool QVLayers::Layer::samePixels(const Layer &other) const
 
 bool QVLayers::Stack::samePixels(const Stack &other) const
 {
-    if (layers.size() != other.layers.size()) return false;
+    if (canvas != other.canvas || layers.size() != other.layers.size()) return false;
     for (int i = 0; i < layers.size(); ++i)
         if (!layers[i].samePixels(other.layers[i])) return false;
     return true;
@@ -112,6 +112,7 @@ bool QVLayers::Stack::samePixels(const Stack &other) const
 
 bool QVLayers::Stack::isNeutral() const
 {
+    if (hasCanvas()) return false;
     bool source = false;
     for (const auto &layer : layers) {
         if (!layer.visible || layer.strength == 0) continue;
@@ -137,10 +138,29 @@ QPointF QVLayers::rotatePoint(QPointF point, int degrees)
     }
 }
 
+QRectF QVLayers::rotateRect(const QRectF &rect, int degrees)
+{
+    return QRectF(rotatePoint(rect.topLeft(), degrees), rotatePoint(rect.bottomRight(), degrees)).normalized();
+}
+
+QRect QVLayers::canvasPixels(const QSize &size, const QRectF &rect)
+{
+    const double left = rect.left() * size.width(), top = rect.top() * size.height();
+    const double right = rect.right() * size.width(), bottom = rect.bottom() * size.height();
+    for (double edge : {left, top, right, bottom})
+        if (!qIsFinite(edge) || qAbs(edge) > 1048576) return {};
+    const int x = qRound(left), y = qRound(top);
+    const int width = qRound(right) - x, height = qRound(bottom) - y;
+    if (width < 1 || height < 1 || width > 32768 || height > 32768
+            || qint64(width) * height > 64 * 1024 * 1024) return {};
+    return QRect(x, y, width, height);
+}
+
 QVLayers::Stack QVLayers::rotated(const Stack &stack, int degrees)
 {
     Stack result = stack;
-    if (degrees % 360 == 0 || !stack.hasDistortion()) return result;
+    if (degrees % 360 == 0) return result;
+    result.canvas = rotateRect(result.canvas, degrees);
     for (auto &layer : result.layers)
         if (layer.kind == Kind::Distort)
             for (auto &stroke : layer.strokes)
@@ -228,13 +248,18 @@ QImage QVLayers::apply(const QImage &source, const Stack &stack)
             }
         }
     }
+    if (stack.hasCanvas()) {
+        const QRect bounds = canvasPixels(source.size(), stack.canvas);
+        if (bounds.isEmpty()) return {};
+        result = result.copy(bounds); // Out-of-image pixels are transparent ARGB.
+    }
     return result;
 }
 
 QString QVLayers::ffmpegFilter(const Stack &stack)
 {
     // Distortion is currently a still-image tool; whole-media export rejects it.
-    if (stack.hasDistortion()) return {};
+    if (stack.hasDistortion() || stack.hasCanvas()) return {};
     if (stack.isNeutral()) return {};
     // geq evaluates each output channel independently. Registers 0..3 retain
     // the original frame; 4..7 hold the composite and 8..9 are scratch space.
@@ -297,6 +322,14 @@ void QVLayerModel::setStack(const QVLayers::Stack &stack)
     }
     emit changed();
     if (pixels) emit pixelsChanged();
+}
+
+void QVLayerModel::setCanvas(const QRectF &rect)
+{
+    if (current.canvas == rect || !rect.isValid()) return;
+    current.canvas = rect;
+    emit changed();
+    emit pixelsChanged();
 }
 
 quint64 QVLayerModel::addFilter(int above)

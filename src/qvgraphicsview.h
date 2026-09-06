@@ -9,6 +9,7 @@
 #include <QImageReader>
 #include <QMimeData>
 #include <QDir>
+#include <QHash>
 #include <QTimer>
 #include <QFileInfo>
 
@@ -73,6 +74,12 @@ public:
     void undoDistort();
     void setDistortLayer(quint64 id) { selectedDistortLayer = id; }
     bool isDistortActive() const { return distortActive; }
+    bool isCropActive() const { return cropActive; }
+    void setCropActive(bool active);
+    void applyCrop();
+    void resetCrop();
+    bool setCropDraft(const QRectF &rect);
+    QRectF cropDraftRect() const { return cropDraft; }
     bool isComparingOriginal() const { return compareOriginal; }
     QVLayerModel *layerModel() { return &layers; }
     void reloadVideo();
@@ -102,6 +109,7 @@ signals:
     void fullscreenRequested();
     void distortLayerCreated(quint64 id);
     void distortRadiusChanged(int radius);
+    void cropActiveChanged(bool active);
 
 protected:
     void wheelEvent(QWheelEvent *event) override;
@@ -132,6 +140,7 @@ protected:
 
     bool event(QEvent *event) override;
     void drawForeground(QPainter *painter, const QRectF &rect) override;
+    void drawBackground(QPainter *painter, const QRectF &rect) override;
     void leaveEvent(QEvent *event) override;
 
     void fitInViewMarginless(const QRectF &rect);
@@ -191,6 +200,26 @@ private:
     QPointF canvasCenterRoundingError;
     NavigationCanvasState navigationCanvasState;
     QVPlaybackLoopMode loopMode;
+    struct SessionEdits {
+        QVLayers::Stack layers;
+        int rotation = 0;
+        bool mirrored = false;
+        bool flipped = false;
+    };
+    QHash<QString, SessionEdits> sessionEdits;
+    void saveSessionEdits();
+    void restoreSessionEdits(const QString &path);
+    bool cropActive = false;
+    bool cropDragging = false;
+    bool cropMoving = false;
+    Qt::Edges cropEdges;
+    QRectF cropDraft{0, 0, 1, 1};
+    QRectF cropDragRect;
+    QPoint cropDragOrigin;
+    QRectF cropScreenRect() const;
+    Qt::Edges cropEdgesAt(const QPoint &position) const;
+    void moveCrop(const QPoint &position);
+    QRectF canvasSceneRect() const;
     bool distortActive = false;
     bool distortDragging = false;
     bool distortHover = false;

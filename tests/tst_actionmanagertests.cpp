@@ -60,6 +60,7 @@ private slots:
     void testDistortTool();
     void testDistortShortcut();
     void testCanvasCopy();
+    void testCanvasCrop();
     void testDistortCache();
     void testLayersHud();
     void testLayersHudCursor();
@@ -306,8 +307,10 @@ void ActionManagerTests::testDistortShortcut()
     QTest::keyClick(canvas, Qt::Key_D);
     QVERIFY(canvas->isDistortActive());
     QVERIFY(tool->isChecked());
-    QTest::keyClick(canvas, Qt::Key_D); // Select, not toggle.
-    QVERIFY(canvas->isDistortActive());
+    QTest::keyClick(canvas, Qt::Key_D); // Toggle back to Pan with the HUD visible.
+    QVERIFY(!canvas->isDistortActive());
+    QVERIFY(pan->isChecked());
+    QVERIFY(!tool->isChecked());
     pan->click();
     QVERIFY(!canvas->isDistortActive());
     QLineEdit editor(&window);
@@ -336,6 +339,95 @@ void ActionManagerTests::testDistortShortcut()
     QVERIFY(canvas->isDistortActive());
     QTest::keyRelease(canvas, Qt::Key_D);
     QVERIFY(!canvas->isDistortActive());
+}
+
+void ActionManagerTests::testCanvasCrop()
+{
+    QTemporaryDir directory;
+    QImage original(80, 60, QImage::Format_ARGB32);
+    for (int y = 0; y < 60; ++y)
+        for (int x = 0; x < 80; ++x) original.setPixel(x, y, qRgb(x*3, y*4, 90));
+    const QString first = directory.filePath("a.png"), second = directory.filePath("b.png");
+    QVERIFY(original.save(first));
+    QVERIFY(original.save(second));
+    MainWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    struct CloseWindow { MainWindow &window; ~CloseWindow() { window.close(); } } cleanup{window};
+    window.show();
+    window.openFile(first);
+    auto *canvas = window.findChild<QVGraphicsView *>();
+    QTRY_VERIFY(canvas->canDistort());
+    window.resize(700, 500);
+    QCoreApplication::processEvents();
+    window.toggleLayers();
+    auto *crop = canvas->findChild<QToolButton *>("layersCrop");
+    QVERIFY(crop && crop->isEnabled());
+    const auto transform = canvas->transform();
+    const auto center = canvas->mapToScene(canvas->viewport()->rect().center());
+    crop->click();
+    QVERIFY(canvas->isCropActive());
+    const QPoint edge = canvas->mapFromScene(QPointF(80, 30));
+    QTest::mousePress(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, edge);
+    QMouseEvent drag(QEvent::MouseMove, QPointF(edge+QPoint(12, 0)), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas->viewport(), &drag);
+    QTest::mouseRelease(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, edge+QPoint(12, 0));
+    QVERIFY(canvas->cropDraftRect().width() > 1);
+    QVERIFY(canvas->setCropDraft(QRectF(-0.25, 0, 1.25, 1.5)));
+    QTest::keyClick(canvas, Qt::Key_Return);
+    QVERIFY(!canvas->isCropActive());
+    QCOMPARE(canvas->currentMediaSize(), QSize(100, 90));
+    QCOMPARE(canvas->transform(), transform);
+    QCOMPARE(canvas->mapToScene(canvas->viewport()->rect().center()), center);
+    std::unique_ptr<QMimeData> mime(canvas->getMimeData());
+    QImage copied = qvariant_cast<QImage>(mime->imageData());
+    QCOMPARE(copied.size(), QSize(100, 90));
+    for (int y = 0; y < 90; ++y) for (int x = 0; x < 100; ++x)
+        QCOMPARE(copied.pixelColor(x, y), x >= 20 && y < 60 ? original.pixelColor(x-20, y) : QColor(Qt::transparent));
+    QVERIFY(!mime->hasUrls());
+    QVExportDialog exportDialog(canvas->exportSource(), &window);
+    QCOMPARE(exportDialog.findChild<QSpinBox *>("exportWidth")->value(), 100);
+    QCOMPARE(exportDialog.findChild<QSpinBox *>("exportHeight")->value(), 90);
+    exportDialog.findChild<QCheckBox *>("exportApplyFilters")->setChecked(false);
+    QCOMPARE(exportDialog.findChild<QSpinBox *>("exportWidth")->value(), 80);
+    QCOMPARE(exportDialog.findChild<QSpinBox *>("exportHeight")->value(), 60);
+    crop->click();
+    QVERIFY(canvas->setCropDraft(QRectF(0, 0, 0.5, 0.5)));
+    QTest::keyClick(canvas, Qt::Key_Escape);
+    QCOMPARE(canvas->currentMediaSize(), QSize(100, 90));
+    crop->click();
+    QTest::keyClick(canvas, Qt::Key_D);
+    QVERIFY(!canvas->isCropActive());
+    QVERIFY(canvas->isDistortActive());
+    QVERIFY(!crop->isChecked());
+    crop->click();
+    QVERIFY(!canvas->isDistortActive());
+    canvas->setCropActive(false);
+    const auto id = canvas->layerModel()->addDistort();
+    auto layer = canvas->layerModel()->stack().layers[0];
+    QCOMPARE(layer.id, id);
+    QVLayers::DistortStroke stroke;
+    stroke.radius = 0.25;
+    stroke.points = { QPointF(0.4, 0.5), QPointF(0.55, 0.5) };
+    layer.strokes.append(stroke);
+    layer.name = "Remember me";
+    canvas->layerModel()->update(layer);
+    canvas->rotateImage(90);
+    window.mirror();
+    const auto saved = canvas->layerModel()->stack();
+    std::unique_ptr<QMimeData> beforeNavigation(canvas->getMimeData());
+    window.openFile(second);
+    QTRY_VERIFY(canvas->canDistort());
+    QTRY_COMPARE(canvas->getCurrentMedia().fileInfo.absoluteFilePath(), second);
+    QVERIFY(canvas->layerModel()->stack().isNeutral());
+    window.openFile(first);
+    QTRY_VERIFY(canvas->canDistort());
+    QTRY_COMPARE(canvas->getCurrentMedia().fileInfo.absoluteFilePath(), first);
+    QVERIFY(canvas->layerModel()->stack().samePixels(saved));
+    QCOMPARE(canvas->layerModel()->stack().layers[0].name, QString("Remember me"));
+    std::unique_ptr<QMimeData> afterNavigation(canvas->getMimeData());
+    QCOMPARE(qvariant_cast<QImage>(afterNavigation->imageData()), qvariant_cast<QImage>(beforeNavigation->imageData()));
+    canvas->resetCrop();
+    QCOMPARE(canvas->currentMediaSize(), original.size().transposed());
 }
 
 void ActionManagerTests::testCanvasCopy()
@@ -412,10 +504,11 @@ void ActionManagerTests::testDistortCache()
     stack.layers.prepend(layer);
     const auto check = [&]() {
         effect->setLayerStack(stack);
-        QImage rendered(source.size(), QImage::Format_ARGB32);
+        const QRect bounds = QVLayers::canvasPixels(source.size(), stack.canvas);
+        QImage rendered(bounds.size(), QImage::Format_ARGB32);
         rendered.fill(Qt::transparent);
         QPainter painter(&rendered);
-        scene.render(&painter, QRectF(source.rect()), QRectF(source.rect()));
+        scene.render(&painter, QRectF(rendered.rect()), QRectF(bounds));
         painter.end();
         QCOMPARE(rendered, QVLayers::apply(source, stack));
     };
@@ -429,6 +522,10 @@ void ActionManagerTests::testDistortCache()
     stack.layers[0].strength = 50;
     check(); // Partial-strength layers use a complete composite.
     stack.layers[0].strokes[0].points.append(QPointF(0.6, 0.55));
+    check();
+    stack.canvas = QRectF(-0.25, 0, 1.5, 1.5);
+    check();
+    stack.canvas = QRectF(0.25, 0.5, 0.5, 0.5);
     check();
 }
 

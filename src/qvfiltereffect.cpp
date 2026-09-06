@@ -10,7 +10,8 @@ void QVFilterEffect::setLayerStack(const QVLayers::Stack &newSettings)
     if (settings.samePixels(newSettings))
         return;
     bool appended = false;
-    if (!cacheDirty && !cachedPixmap.isNull() && settings.layers.size() == newSettings.layers.size()
+    if (!cacheDirty && !cachedPixmap.isNull() && !settings.hasCanvas() && !newSettings.hasCanvas()
+            && settings.layers.size() == newSettings.layers.size()
             && !settings.layers.isEmpty()) {
         const auto &old = settings.layers[0];
         const auto &next = newSettings.layers[0];
@@ -52,6 +53,7 @@ void QVFilterEffect::setLayerStack(const QVLayers::Stack &newSettings)
     }
     settings = newSettings;
     cacheDirty = !appended;
+    updateBoundingRect();
     update();
 }
 
@@ -59,6 +61,7 @@ void QVFilterEffect::setCompareOriginal(bool enabled)
 {
     if (compareOriginal == enabled) return;
     compareOriginal = enabled;
+    updateBoundingRect();
     update();
 }
 
@@ -66,6 +69,14 @@ void QVFilterEffect::sourceChanged(ChangeFlags flags)
 {
     cacheDirty = true;
     QGraphicsEffect::sourceChanged(flags);
+}
+
+QRectF QVFilterEffect::boundingRectFor(const QRectF &rect) const
+{
+    if (compareOriginal || !settings.hasCanvas()) return rect;
+    const auto &canvas = settings.canvas;
+    return QRectF(rect.x() + canvas.x()*rect.width(), rect.y() + canvas.y()*rect.height(),
+                  canvas.width()*rect.width(), canvas.height()*rect.height());
 }
 
 void QVFilterEffect::draw(QPainter *painter)
@@ -79,9 +90,11 @@ void QVFilterEffect::draw(QPainter *painter)
         const QPixmap source = sourcePixmap(Qt::LogicalCoordinates, &cachedOffset, NoPad);
         if (source.isNull())
             return;
+        const QRect bounds = QVLayers::canvasPixels(source.size(), settings.canvas);
+        canvasOffset = settings.hasCanvas() ? QPointF(bounds.topLeft()) / source.devicePixelRatio() : QPointF();
         cachedPixmap = QPixmap::fromImage(QVLayers::apply(source.toImage(), settings));
         cachedPixmap.setDevicePixelRatio(source.devicePixelRatio());
         cacheDirty = false;
     }
-    painter->drawPixmap(cachedOffset, cachedPixmap);
+    painter->drawPixmap(QPointF(cachedOffset) + canvasOffset, cachedPixmap);
 }

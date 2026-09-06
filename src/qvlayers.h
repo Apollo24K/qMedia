@@ -4,6 +4,7 @@
 #include "qvfilters.h"
 #include <QObject>
 #include <QPointF>
+#include <QRectF>
 
 // Layer order is visual: the first entry is on top. Source entries refer to the
 // current decoded frame, so duplicating video never creates another player.
@@ -20,6 +21,9 @@ struct DistortStroke {
     }
 };
 QPointF rotatePoint(QPointF point, int degrees);
+QRectF rotateRect(const QRectF &rect, int degrees);
+// Empty return means an invalid or excessively large canvas allocation.
+QRect canvasPixels(const QSize &sourceSize, const QRectF &rect);
 
 struct Layer {
     quint64 id = 0;
@@ -35,6 +39,8 @@ struct Layer {
 
 struct Stack {
     QVector<Layer> layers{ Layer() };
+    QRectF canvas{0, 0, 1, 1};
+    bool hasCanvas() const { return canvas != QRectF(0, 0, 1, 1); }
     bool isNeutral() const;
     bool hasDistortion() const;
     bool samePixels(const Stack &other) const;
@@ -63,6 +69,7 @@ public:
     bool move(quint64 id, int index);
     void update(const QVLayers::Layer &layer);
     void setStack(const QVLayers::Stack &stack);
+    void setCanvas(const QRectF &rect);
 signals:
     void changed();
     void pixelsChanged();

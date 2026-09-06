@@ -172,6 +172,12 @@ QVExportDialog::QVExportDialog(const QVExport::Source &source, QWidget *parent)
     lastRotation = source.rotation;
     width->setValue(orientedSize().width());
     height->setValue(orientedSize().height());
+    connect(applyFilters, &QCheckBox::toggled, this, [this] {
+        if (this->source.layers.hasCanvas()) {
+            width->setValue(orientedSize().width());
+            height->setValue(orientedSize().height());
+        }
+    });
     body->addLayout(form);
     layout->addLayout(body);
     status = new QLabel(this);
@@ -516,8 +522,11 @@ QVExport::Options QVExportDialog::selectedOptions() const
 
 QSize QVExportDialog::orientedSize() const
 {
+    QSize size = source.size;
+    if (applyFilters && applyFilters->isChecked() && source.layers.hasCanvas())
+        size = QVLayers::canvasPixels(size, source.layers.canvas).size();
     return rotate->isChecked() && rotation->currentData().toInt() % 180
-            ? source.size.transposed() : source.size;
+            ? size.transposed() : size;
 }
 
 void QVExportDialog::rotationChanged()

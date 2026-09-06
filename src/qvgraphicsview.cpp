@@ -19,6 +19,8 @@
 #include <QScrollBar>
 #include <QElapsedTimer>
 #include <QBuffer>
+#include <QSignalBlocker>
+#include <QPainterPath>
 
 QVExport::Source QVGraphicsView::exportSource() const
 {
@@ -56,7 +58,7 @@ QVExport::Source QVGraphicsView::exportSource() const
                 && imageCore.currentAnimationLoopsByDefault());
     source.muted = source.video && isVideoMuted();
     source.layers = layers.stack();
-    if (source.path.isEmpty() && source.layers.hasDistortion() && !source.frame.isNull()) {
+    if (source.path.isEmpty() && (source.layers.hasDistortion() || source.layers.hasCanvas()) && !source.frame.isNull()) {
         source.frame = source.frame.transformed(QTransform().rotate(-source.rotation));
         source.size = source.frame.size();
     }
@@ -186,6 +188,15 @@ void QVGraphicsView::enterEvent(QEnterEvent *event)
 
 void QVGraphicsView::mousePressEvent(QMouseEvent *event)
 {
+    if (cropActive && event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier) {
+        cropEdges = cropEdgesAt(event->pos());
+        cropDragRect = cropScreenRect();
+        cropMoving = !cropEdges && cropDragRect.contains(event->pos());
+        cropDragging = cropMoving || bool(cropEdges);
+        cropDragOrigin = event->pos();
+        event->accept();
+        return;
+    }
     if (distortActive && event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier) {
         if (canDistort() && !compareOriginal && loadedPixmapItem->contains(loadedPixmapItem->mapFromScene(mapToScene(event->pos())))) {
             distortDragging = true;
@@ -268,7 +279,7 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
 
 void QVGraphicsView::mouseDoubleClickEvent(QMouseEvent *event)
 {
-    if (distortActive && event->button() == Qt::LeftButton) { mousePressEvent(event); return; }
+    if ((distortActive || cropActive) && event->button() == Qt::LeftButton) { mousePressEvent(event); return; }
     if (event->button() == Qt::LeftButton) {
         emit fullscreenRequested();
         return;
@@ -278,6 +289,19 @@ void QVGraphicsView::mouseDoubleClickEvent(QMouseEvent *event)
 
 void QVGraphicsView::mouseMoveEvent(QMouseEvent *event)
 {
+    if (cropActive) {
+        if (cropDragging && event->buttons().testFlag(Qt::LeftButton)) moveCrop(event->pos());
+        else cropDragging = false;
+        const auto edges = cropEdgesAt(event->pos());
+        const bool horizontal = edges.testFlag(Qt::LeftEdge) || edges.testFlag(Qt::RightEdge);
+        const bool vertical = edges.testFlag(Qt::TopEdge) || edges.testFlag(Qt::BottomEdge);
+        const bool diagonal = edges.testFlag(Qt::LeftEdge) == edges.testFlag(Qt::TopEdge);
+        viewport()->setCursor(horizontal && vertical ? (diagonal ? Qt::SizeFDiagCursor : Qt::SizeBDiagCursor)
+                : horizontal ? Qt::SizeHorCursor : vertical ? Qt::SizeVerCursor
+                : cropScreenRect().contains(event->pos()) ? Qt::SizeAllCursor : Qt::CrossCursor);
+        event->accept();
+        return;
+    }
     if (distortActive) {
         distortPosition = mapToScene(event->pos());
         distortHover = true;
@@ -313,6 +337,12 @@ void QVGraphicsView::mouseMoveEvent(QMouseEvent *event)
 
 void QVGraphicsView::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (cropActive && event->button() == Qt::LeftButton) {
+        if (cropDragging) moveCrop(event->pos());
+        cropDragging = false;
+        event->accept();
+        return;
+    }
     if (distortDragging && event->button() == Qt::LeftButton) {
         continueDistort(event->pos());
         distortDragging = false;
@@ -328,7 +358,7 @@ void QVGraphicsView::mouseReleaseEvent(QMouseEvent *event)
 bool QVGraphicsView::event(QEvent *event)
 {
     if (event->type() == QEvent::WindowDeactivate || event->type() == QEvent::FocusOut
-            || event->type() == QEvent::Hide) distortDragging = false;
+            || event->type() == QEvent::Hide) { distortDragging = false; cropDragging = false; }
     // this is for touchpad pinch gestures
     if (event->type() == QEvent::Gesture) {
         auto *gestureEvent = static_cast<QGestureEvent *>(event);
@@ -371,7 +401,7 @@ void QVGraphicsView::wheelEvent(QWheelEvent *event)
         event->accept();
         return;
     }
-    if (distortDragging) { event->accept(); return; }
+    if (distortDragging || cropDragging) { event->accept(); return; }
 #if (QT_VERSION >= QT_VERSION_CHECK(5, 14, 0))
     const QPoint eventPos = event->position().toPoint();
 #else
@@ -514,8 +544,10 @@ void QVGraphicsView::loadFile(const QString &fileName)
 
     const auto mediaType = imageCore.mediaTypeForFile(fileInfo);
     if (mediaType == QVMediaCatalog::MediaType::Video) {
+        saveSessionEdits();
+        setCropActive(false);
         setDistortActive(false);
-        layers.clearDistortions();
+        layers.setStack(QVLayers::Stack());
         distortSource.clear();
         resetCanvasForNewMedia();
         videoNativeSize = QSize();
@@ -538,6 +570,8 @@ void QVGraphicsView::loadFile(const QString &fileName)
             navigationCanvasState.valid = false;
             return;
         }
+        saveSessionEdits();
+        setCropActive(false);
         const bool wasVideoCanvasActive = videoCanvasActive;
         // Images bake rotation into their decoded pixels. Transfer the video
         // orientation before decoding, while image update signals are still hidden.
@@ -559,17 +593,46 @@ void QVGraphicsView::reloadFile()
     if (!getImageDetails().isPixmapLoaded)
         return;
 
+    saveSessionEdits();
+    setCropActive(false);
     imageCore.loadFile(getCurrentMedia().fileInfo.absoluteFilePath(), true);
+}
+
+void QVGraphicsView::saveSessionEdits()
+{
+    if (videoCanvasActive || distortSource.isEmpty() || !getImageDetails().isPixmapLoaded) return;
+    SessionEdits saved;
+    saved.layers = layers.stack();
+    saved.rotation = imageCore.getCurrentRotation();
+    saved.mirrored = transform().m11() < 0;
+    saved.flipped = transform().m22() < 0;
+    sessionEdits.insert(distortSource, saved);
+}
+
+void QVGraphicsView::restoreSessionEdits(const QString &path)
+{
+    setCropActive(false);
+    setDistortActive(false);
+    distortSource = path;
+    const auto saved = sessionEdits.value(path);
+    layers.setStack(saved.layers);
+    if (!getImageDetails().isPixmapLoaded || path.isEmpty()) return;
+    {
+        QSignalBlocker blocker(&imageCore);
+        imageCore.rotateImage(saved.rotation - imageCore.getCurrentRotation());
+    }
+    if (navigationCanvasState.valid) {
+        navigationCanvasState.rotation = saved.rotation;
+        navigationCanvasState.mirrored = saved.mirrored;
+        navigationCanvasState.flipped = saved.flipped;
+    }
+    setTransform(QTransform::fromScale(saved.mirrored ? -1 : 1, saved.flipped ? -1 : 1));
 }
 
 void QVGraphicsView::postLoad()
 {
     const QString path = getCurrentMedia().fileInfo.absoluteFilePath();
-    if (path != distortSource) {
-        setDistortActive(false);
-        layers.clearDistortions();
-        distortSource = path;
-    }
+    if (path != distortSource) restoreSessionEdits(path);
     updateLoadedPixmapItem();
     qvApp->getActionManager().addFileToRecentsList(getCurrentMedia().fileInfo);
 
@@ -776,6 +839,7 @@ void QVGraphicsView::resetScale()
 
 void QVGraphicsView::resetView()
 {
+    setCropActive(false);
     distortDragging = false;
     // An in-flight navigation must not restore the view the user just reset.
     navigationCanvasState.valid = false;
@@ -1014,7 +1078,7 @@ void QVGraphicsView::fitInViewMarginless(const QRectF &rect)
 
 void QVGraphicsView::fitInViewMarginless(const QGraphicsItem *item)
 {
-    return fitInViewMarginless(item->sceneBoundingRect());
+    return fitInViewMarginless(item == activeCanvasItem() ? canvasSceneRect() : item->sceneBoundingRect());
 }
 
 void QVGraphicsView::centerOn(const QPointF &pos)
@@ -1049,7 +1113,7 @@ void QVGraphicsView::centerOn(qreal x, qreal y)
 
 void QVGraphicsView::centerOn(const QGraphicsItem *item)
 {
-    centerOn(item->sceneBoundingRect().center());
+    centerOn((item == activeCanvasItem() ? canvasSceneRect() : item->sceneBoundingRect()).center());
 }
 
 void QVGraphicsView::settingsUpdated()
@@ -1095,6 +1159,115 @@ void QVGraphicsView::ensureVideoView()
     connect(videoView, &QVVideoView::errorOccurred, this, &QVGraphicsView::videoErrorOccurred);
 }
 
+QRectF QVGraphicsView::canvasSceneRect() const
+{
+    if (videoCanvasActive) return activeCanvasItem()->sceneBoundingRect();
+    const auto bounds = loadedPixmapItem->boundingRect();
+    const auto canvas = QVLayers::rotateRect(layers.stack().canvas, imageCore.getCurrentRotation());
+    return loadedPixmapItem->mapRectToScene(QRectF(bounds.x() + canvas.x()*bounds.width(),
+            bounds.y() + canvas.y()*bounds.height(), canvas.width()*bounds.width(), canvas.height()*bounds.height()));
+}
+
+void QVGraphicsView::setCropActive(bool active)
+{
+    active = active && canDistort();
+    if (active == cropActive) return;
+    if (active) setDistortActive(false);
+    cropActive = active;
+    cropDragging = false;
+    cropDraft = QVLayers::rotateRect(layers.stack().canvas, imageCore.getCurrentRotation());
+    viewport()->setMouseTracking(active || distortActive);
+    viewport()->setCursor(active ? Qt::CrossCursor : Qt::ArrowCursor);
+    if (active) setFocus();
+    updateLayerEffects();
+    viewport()->update();
+    emit cropActiveChanged(active);
+}
+
+bool QVGraphicsView::setCropDraft(const QRectF &rect)
+{
+    if (!cropActive) return false;
+    const QSize size = getImageDetails().loadedPixmapSize;
+    const QRect pixels = QVLayers::canvasPixels(size, rect);
+    if (pixels.isEmpty()) return false;
+    cropDraft = QRectF(double(pixels.x())/size.width(), double(pixels.y())/size.height(),
+                       double(pixels.width())/size.width(), double(pixels.height())/size.height());
+    viewport()->update();
+    return true;
+}
+
+void QVGraphicsView::applyCrop()
+{
+    if (!cropActive || !setCropDraft(cropDraft)) return;
+    layers.setCanvas(QVLayers::rotateRect(cropDraft, -imageCore.getCurrentRotation()));
+    setCropActive(false);
+}
+
+void QVGraphicsView::resetCrop()
+{
+    layers.setCanvas(QRectF(0, 0, 1, 1));
+    cropDraft = QRectF(0, 0, 1, 1);
+    viewport()->update();
+}
+
+QRectF QVGraphicsView::cropScreenRect() const
+{
+    const QRectF bounds = loadedPixmapItem->boundingRect();
+    const QRectF draft(cropDraft.x()*bounds.width(), cropDraft.y()*bounds.height(),
+                       cropDraft.width()*bounds.width(), cropDraft.height()*bounds.height());
+    return viewportTransform().mapRect(loadedPixmapItem->mapRectToScene(draft));
+}
+
+Qt::Edges QVGraphicsView::cropEdgesAt(const QPoint &point) const
+{
+    const QRectF rect = cropScreenRect();
+    Qt::Edges edges;
+    if (!rect.adjusted(-8, -8, 8, 8).contains(point)) return edges;
+    if (qAbs(point.x()-rect.left()) <= 8) edges |= Qt::LeftEdge;
+    else if (qAbs(point.x()-rect.right()) <= 8) edges |= Qt::RightEdge;
+    if (qAbs(point.y()-rect.top()) <= 8) edges |= Qt::TopEdge;
+    else if (qAbs(point.y()-rect.bottom()) <= 8) edges |= Qt::BottomEdge;
+    return edges;
+}
+
+void QVGraphicsView::moveCrop(const QPoint &point)
+{
+    QRectF rect = cropDragRect;
+    const QPoint delta = point-cropDragOrigin;
+    if (cropMoving) rect.translate(delta);
+    else {
+        if (cropEdges.testFlag(Qt::LeftEdge)) rect.setLeft(rect.left()+delta.x());
+        if (cropEdges.testFlag(Qt::RightEdge)) rect.setRight(rect.right()+delta.x());
+        if (cropEdges.testFlag(Qt::TopEdge)) rect.setTop(rect.top()+delta.y());
+        if (cropEdges.testFlag(Qt::BottomEdge)) rect.setBottom(rect.bottom()+delta.y());
+    }
+    if (rect.width() < 1 || rect.height() < 1) return;
+    const QPointF a = loadedPixmapItem->mapFromScene(mapToScene(rect.topLeft().toPoint()));
+    const QPointF b = loadedPixmapItem->mapFromScene(mapToScene(rect.bottomRight().toPoint()));
+    const QRectF bounds = loadedPixmapItem->boundingRect();
+    const QRectF local = QRectF(a,b).normalized();
+    setCropDraft(QRectF(local.x()/bounds.width(), local.y()/bounds.height(),
+                        local.width()/bounds.width(), local.height()/bounds.height()));
+}
+
+void QVGraphicsView::drawBackground(QPainter *painter, const QRectF &rect)
+{
+    QGraphicsView::drawBackground(painter, rect);
+    if (videoCanvasActive || !getImageDetails().isPixmapLoaded || compareOriginal
+            || (!cropActive && !layers.stack().hasCanvas())) return;
+    painter->save();
+    painter->resetTransform();
+    QPixmap tile(16, 16);
+    tile.fill(QColor(65, 65, 65));
+    QPainter checker(&tile);
+    checker.fillRect(0, 0, 8, 8, QColor(85, 85, 85));
+    checker.fillRect(8, 8, 8, 8, QColor(85, 85, 85));
+    checker.end();
+    const QRectF area = cropActive ? cropScreenRect() : viewportTransform().mapRect(canvasSceneRect());
+    painter->fillRect(area, QBrush(tile));
+    painter->restore();
+}
+
 bool QVGraphicsView::canDistort() const
 {
     return !videoCanvasActive && getImageDetails().isPixmapLoaded
@@ -1103,6 +1276,7 @@ bool QVGraphicsView::canDistort() const
 
 void QVGraphicsView::setDistortActive(bool active)
 {
+    if (active && cropActive) setCropActive(false);
     distortActive = active && canDistort();
     distortDragging = false;
     distortHover = false;
@@ -1175,6 +1349,33 @@ void QVGraphicsView::continueDistort(const QPoint &position)
 void QVGraphicsView::drawForeground(QPainter *painter, const QRectF &rect)
 {
     QGraphicsView::drawForeground(painter, rect);
+    if (cropActive && !compareOriginal) {
+        painter->save();
+        painter->resetTransform();
+        const QRectF frame = cropScreenRect();
+        QPainterPath shade;
+        shade.setFillRule(Qt::OddEvenFill);
+        shade.addRect(viewport()->rect());
+        shade.addRect(frame);
+        painter->fillPath(shade, QColor(0, 0, 0, 110));
+        painter->setBrush(Qt::NoBrush);
+        painter->setPen(QPen(Qt::black, 3));
+        painter->drawRect(frame);
+        painter->setPen(QPen(Qt::white, 1));
+        painter->drawRect(frame);
+        painter->setBrush(Qt::white);
+        for (int x = 0; x < 3; ++x) for (int y = 0; y < 3; ++y) {
+            if (x == 1 && y == 1) continue;
+            const QPointF handle(frame.left()+frame.width()*x/2, frame.top()+frame.height()*y/2);
+            painter->drawRect(QRectF(handle-QPointF(3,3), QSizeF(6,6)));
+        }
+        const QSize size = QVLayers::canvasPixels(getImageDetails().loadedPixmapSize, cropDraft).size();
+        const QString hint = tr("%1 x %2  |  Enter: apply  |  Esc: cancel").arg(size.width()).arg(size.height());
+        const QRect label(12, viewport()->height()-36, qMin(viewport()->width()-24, 380), 24);
+        painter->fillRect(label, QColor(0,0,0,180));
+        painter->drawText(label, Qt::AlignCenter, hint);
+        painter->restore();
+    }
     if (!distortActive || !distortHover || compareOriginal) return;
     painter->save();
     const QPoint center = mapFromScene(distortPosition);
@@ -1206,7 +1407,9 @@ void QVGraphicsView::setCompareOriginal(bool enabled)
 void QVGraphicsView::updateLayerEffects()
 {
     const auto updateEffect = [this](QGraphicsItem *item) {
-        if (layers.stack().isNeutral()) {
+        auto display = QVLayers::rotated(layers.stack(), videoCanvasActive ? 0 : imageCore.getCurrentRotation());
+        if (cropActive) display.canvas = QRectF(0, 0, 1, 1);
+        if (display.isNeutral()) {
             item->setGraphicsEffect(nullptr);
             return;
         }
@@ -1215,7 +1418,7 @@ void QVGraphicsView::updateLayerEffects()
             effect = new QVFilterEffect();
             item->setGraphicsEffect(effect);
         }
-        effect->setLayerStack(QVLayers::rotated(layers.stack(), videoCanvasActive ? 0 : imageCore.getCurrentRotation()));
+        effect->setLayerStack(display);
         effect->setCompareOriginal(compareOriginal);
     };
     updateEffect(loadedPixmapItem);
@@ -1354,7 +1557,7 @@ QPointF QVGraphicsView::normalizedCanvasCenter() const
 {
     // Scene bounds include video rotation; image rotation is already baked into
     // pixels. This gives both representations the same oriented coordinates.
-    const QRectF bounds = activeCanvasItem()->sceneBoundingRect();
+    const QRectF bounds = canvasSceneRect();
     const QPointF itemCenter = viewportTransform().inverted().map(canvasViewportCenter());
     return QPointF((itemCenter.x() - bounds.left()) / bounds.width(),
                    (itemCenter.y() - bounds.top()) / bounds.height());
@@ -1374,7 +1577,7 @@ void QVGraphicsView::centerOnNormalizedCanvasPoint(const QPointF &normalizedPoin
     if (!hasActiveCanvasItem())
         return;
 
-    const QRectF bounds = activeCanvasItem()->sceneBoundingRect();
+    const QRectF bounds = canvasSceneRect();
     const QPointF itemPoint(bounds.left() + normalizedPoint.x() * bounds.width(),
                             bounds.top() + normalizedPoint.y() * bounds.height());
     const QPointF delta = viewportTransform().map(itemPoint)
@@ -1439,7 +1642,11 @@ QString QVGraphicsView::videoErrorString() const
 
 QSize QVGraphicsView::currentMediaSize() const
 {
-    return videoCanvasActive ? videoNativeSize : getImageDetails().loadedPixmapSize;
+    if (videoCanvasActive) return videoNativeSize;
+    const QSize size = getImageDetails().loadedPixmapSize;
+    return layers.stack().hasCanvas()
+            ? QVLayers::canvasPixels(size, QVLayers::rotateRect(layers.stack().canvas, imageCore.getCurrentRotation())).size()
+            : size;
 }
 
 void QVGraphicsView::reloadVideo()
@@ -1467,8 +1674,10 @@ void QVGraphicsView::toggleVideoPaused()
 
 void QVGraphicsView::closeImage()
 {
+    saveSessionEdits();
+    setCropActive(false);
     setDistortActive(false);
-    layers.clearDistortions();
+    layers.setStack(QVLayers::Stack());
     distortSource.clear();
     ++mediaRequestGeneration;
     navigationCanvasState.valid = false;
@@ -1552,6 +1761,7 @@ void QVGraphicsView::togglePlaybackLoopMode()
 
 void QVGraphicsView::rotateImage(int rotation)
 {
+    setCropActive(false);
     distortDragging = false;
     if (!videoCanvasActive) {
         imageCore.rotateImage(rotation);

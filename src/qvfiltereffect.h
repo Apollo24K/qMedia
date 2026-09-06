@@ -18,6 +18,7 @@ public:
 
 protected:
     void draw(QPainter *painter) override;
+    QRectF boundingRectFor(const QRectF &rect) const override;
     void sourceChanged(ChangeFlags flags) override;
 
 private:
@@ -25,6 +26,7 @@ private:
     bool compareOriginal = false;
     bool cacheDirty = true;
     QPoint cachedOffset;
+    QPointF canvasOffset;
     QPixmap cachedPixmap;
 };
 

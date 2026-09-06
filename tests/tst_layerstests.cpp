@@ -9,11 +9,35 @@ class LayersTests : public QObject
     Q_OBJECT
 private slots:
     void distortion();
+    void canvasBounds();
     void sourceAndAdjustment();
     void blendModes();
     void modelEdits();
     void ffmpegMatchesComposite();
 };
+
+void LayersTests::canvasBounds()
+{
+    QImage image(8, 6, QImage::Format_ARGB32);
+    for (int y = 0; y < 6; ++y)
+        for (int x = 0; x < 8; ++x) image.setPixel(x, y, qRgb(x*30, y*40, 90));
+    QVLayerModel model;
+    model.setCanvas(QRectF(-0.25, 0, 1.5, 1.5));
+    QVERIFY(!model.stack().isNeutral());
+    const QImage extended = QVLayers::apply(image, model.stack());
+    QCOMPARE(extended, image.copy(-2, 0, 12, 9));
+    QCOMPARE(extended.pixelColor(0, 0).alpha(), 0);
+    QCOMPARE(extended.copy(2, 0, 8, 6), image);
+    for (int degrees : {90, 180, 270}) {
+        QCOMPARE(QVLayers::apply(image.transformed(QTransform().rotate(degrees)), QVLayers::rotated(model.stack(), degrees)),
+                 extended.transformed(QTransform().rotate(degrees)));
+    }
+    model.setCanvas(QRectF(0.25, 0.5, 0.5, 0.5));
+    QCOMPARE(QVLayers::apply(image, model.stack()), image.copy(2, 3, 4, 3));
+    model.setCanvas(QRectF(0, 0, 1, 1));
+    QCOMPARE(QVLayers::apply(image, model.stack()), image);
+    QVERIFY(QVLayers::canvasPixels(image.size(), QRectF(0, 0, 1e10, 1)).isEmpty());
+}
 
 void LayersTests::distortion()
 {

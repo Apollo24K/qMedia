@@ -529,14 +529,36 @@ QVLayersHud::QVLayersHud(QVLayerModel *layerModel, QWidget *viewport)
         setDistortActive(active);
         emit distortRequested(active);
     });
+    cropButton = button(toolbar, "crop", tr("Crop / extend canvas: drag edges, Enter to apply, Esc to cancel. Right-click for options"), "layersCrop");
+    cropButton->setCheckable(true);
+    cropButton->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(cropButton, &QToolButton::clicked, this, [this](bool active) {
+        setCropActive(active);
+        emit cropRequested(active);
+    });
+    connect(cropButton, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+        QMenu menu;
+        auto *apply = menu.addAction(tr("Apply canvas bounds"));
+        auto *cancel = menu.addAction(tr("Cancel"));
+        apply->setEnabled(cropButton->isChecked());
+        cancel->setEnabled(cropButton->isChecked());
+        menu.addSeparator();
+        auto *reset = menu.addAction(tr("Reset canvas to original"));
+        auto *chosen = menu.exec(cropButton->mapToGlobal(pos));
+        if (chosen == apply) emit cropApplyRequested();
+        else if (chosen == cancel) { setCropActive(false); emit cropRequested(false); }
+        else if (chosen == reset) emit cropResetRequested();
+    });
     auto *filterTool = button(toolbar, "filter", tr("Filters (U)"), "layersFilterTool");
     auto *fit = button(toolbar, "fit", tr("Reset view"), "layersResetView");
     auto *save = button(toolbar, "export", tr("Export media"), "layersExport");
-    for (auto *tool : { hand, distortButton, filterTool, fit, save }) tools->addWidget(tool);
+    for (auto *tool : { hand, distortButton, cropButton, filterTool, fit, save }) tools->addWidget(tool);
     tools->addStretch();
 
     connect(close, &QToolButton::clicked, this, [this] { setVisible(false); });
     connect(hand, &QToolButton::clicked, this, [this, viewport] {
+        setCropActive(false);
+        emit cropRequested(false);
         setDistortActive(false);
         emit distortRequested(false);
         viewport->setFocus();
@@ -569,7 +591,7 @@ QVLayersHud::QVLayersHud(QVLayerModel *layerModel, QWidget *viewport)
     connect(strength, &QSlider::valueChanged, this, &QVLayersHud::updateSelection);
     connect(model, &QVLayerModel::changed, this, &QVLayersHud::refresh);
     panel->restorePlacement("layersHud/panel", QSize(292, 490));
-    toolbar->restorePlacement("layersHud/tools", QSize(46, 201));
+    toolbar->restorePlacement("layersHud/tools", QSize(46, 234));
     refresh();
 }
 
@@ -586,6 +608,8 @@ void QVLayersHud::toggle() { setVisible(!isVisible()); }
 void QVLayersHud::setVisible(bool visible)
 {
     if (!visible) {
+        setCropActive(false);
+        emit cropRequested(false);
         setDistortActive(false);
         emit distortRequested(false);
         panel->savePlacement("layersHud/panel");
@@ -599,6 +623,8 @@ void QVLayersHud::setVisible(bool visible)
 
 void QVLayersHud::setDistortAvailable(bool available)
 {
+    cropButton->setEnabled(available);
+    if (!available) { setCropActive(false); emit cropRequested(false); }
     distortButton->setEnabled(available);
     if (!available) { setDistortActive(false); emit distortRequested(false); }
     distortButton->setToolTip(available
@@ -615,7 +641,15 @@ void QVLayersHud::setBrushRadius(int radius)
 void QVLayersHud::setDistortActive(bool active)
 {
     distortButton->setChecked(active);
-    panButton->setChecked(!active);
+    if (active) cropButton->setChecked(false);
+    panButton->setChecked(!active && !cropButton->isChecked());
+}
+
+void QVLayersHud::setCropActive(bool active)
+{
+    cropButton->setChecked(active);
+    if (active) distortButton->setChecked(false);
+    panButton->setChecked(!active && !distortButton->isChecked());
 }
 
 void QVLayersHud::setSource(const QString &source, bool available)
