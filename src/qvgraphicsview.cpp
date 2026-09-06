@@ -988,6 +988,7 @@ void QVGraphicsView::ensureVideoView()
     if (!layers.stack().isNeutral()) {
         auto *filterEffect = new QVFilterEffect();
         filterEffect->setLayerStack(layers.stack());
+        filterEffect->setCompareOriginal(compareOriginal);
         videoView->graphicsItem()->setGraphicsEffect(filterEffect);
     }
     videoView->setLoopMode(loopMode);
@@ -1013,6 +1014,13 @@ void QVGraphicsView::ensureVideoView()
     connect(videoView, &QVVideoView::errorOccurred, this, &QVGraphicsView::videoErrorOccurred);
 }
 
+void QVGraphicsView::setCompareOriginal(bool enabled)
+{
+    if (compareOriginal == enabled) return;
+    compareOriginal = enabled;
+    updateLayerEffects();
+}
+
 void QVGraphicsView::updateLayerEffects()
 {
     const auto updateEffect = [this](QGraphicsItem *item) {
@@ -1026,6 +1034,7 @@ void QVGraphicsView::updateLayerEffects()
             item->setGraphicsEffect(effect);
         }
         effect->setLayerStack(layers.stack());
+        effect->setCompareOriginal(compareOriginal);
     };
     updateEffect(loadedPixmapItem);
     if (videoView) updateEffect(videoView->graphicsItem());

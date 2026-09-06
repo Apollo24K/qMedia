@@ -36,6 +36,12 @@
 #include <QNetworkRequest>
 #include <QNetworkReply>
 #include <QTemporaryFile>
+#include <QKeyEvent>
+#include <QLineEdit>
+#include <QTextEdit>
+#include <QPlainTextEdit>
+#include <QAbstractSpinBox>
+#include <QKeySequenceEdit>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow)
 {
@@ -57,6 +63,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // behave consistently for every visual media type.
     graphicsView = new QVGraphicsView(this);
     centralWidget()->layout()->addWidget(graphicsView);
+    qApp->installEventFilter(this);
 
     // Hide fullscreen label by default
     ui->fullscreenLabel->hide();
@@ -178,6 +185,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
 MainWindow::~MainWindow()
 {
+    qApp->removeEventFilter(this);
     delete ui;
 }
 
@@ -187,6 +195,60 @@ bool MainWindow::event(QEvent *event)
         qvApp->addToLastActiveWindows(this);
     }
     return QMainWindow::event(event);
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    // A release can reach a different widget, or never arrive after switching apps.
+    if (compareHeldKey && (event->type() == QEvent::ApplicationDeactivate
+            || (event->type() == QEvent::WindowDeactivate
+                && (watched == this || watched == filtersDialog))
+            || (event->type() == QEvent::Hide
+                && (watched == this || watched == filtersDialog)))) {
+        compareHeldKey = 0;
+        graphicsView->setCompareOriginal(false);
+    }
+    if (event->type() != QEvent::KeyPress && event->type() != QEvent::KeyRelease
+            && event->type() != QEvent::ShortcutOverride)
+        return QMainWindow::eventFilter(watched, event);
+
+    auto *key = static_cast<QKeyEvent *>(event);
+    if (compareHeldKey && key->key() == compareHeldKey) {
+        if (event->type() == QEvent::KeyRelease && !key->isAutoRepeat()) {
+            compareHeldKey = 0;
+            graphicsView->setCompareOriginal(false);
+        }
+        event->accept();
+        return true;
+    }
+    auto *widget = qobject_cast<QWidget *>(watched);
+    if (!widget || (widget->window() != this && widget->window() != filtersDialog)
+            || !graphicsView->isMediaLoaded() || key->isAutoRepeat()
+            || event->type() == QEvent::KeyRelease)
+        return false;
+    // Also check focus: ignored editor keys can bubble up to their parent window.
+    const auto isEditor = [](QWidget *input) {
+        for (QWidget *editor = input; editor; editor = editor->parentWidget()) {
+            if (qobject_cast<QLineEdit *>(editor) || qobject_cast<QTextEdit *>(editor)
+                    || qobject_cast<QPlainTextEdit *>(editor)
+                    || qobject_cast<QAbstractSpinBox *>(editor)
+                    || qobject_cast<QKeySequenceEdit *>(editor))
+                return true;
+        }
+        return false;
+    };
+    QWidget *focused = QApplication::focusWidget();
+    if (isEditor(widget) || (focused && focused->window() == widget->window()
+                            && isEditor(focused)))
+        return false;
+    const QKeySequence pressed(key->key() | int(key->modifiers()));
+    if (!compareShortcuts.contains(pressed)) return false;
+    if (event->type() == QEvent::KeyPress) {
+        compareHeldKey = key->key();
+        graphicsView->setCompareOriginal(true);
+    }
+    event->accept();
+    return true;
 }
 
 void MainWindow::contextMenuEvent(QContextMenuEvent *event)
@@ -395,6 +457,13 @@ void MainWindow::settingsUpdated()
 
 void MainWindow::shortcutsUpdated()
 {
+    compareHeldKey = 0;
+    graphicsView->setCompareOriginal(false);
+    compareShortcuts.clear();
+    for (const auto &shortcut : qvApp->getShortcutManager().getShortcutsList()) {
+        if (shortcut.name == "compareoriginal")
+            compareShortcuts = ShortcutManager::stringListToKeySequenceList(shortcut.shortcuts);
+    }
     // If esc is not used in a shortcut, let it exit fullscreen
     escShortcut->setKey(Qt::Key_Escape);
 

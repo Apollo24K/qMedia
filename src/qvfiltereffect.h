@@ -12,6 +12,7 @@ class QVFilterEffect : public QGraphicsEffect
 public:
     explicit QVFilterEffect(QObject *parent = nullptr);
 
+    void setCompareOriginal(bool enabled);
     void setLayerStack(const QVLayers::Stack &settings);
     const QVLayers::Stack &layerStack() const { return settings; }
 
@@ -21,6 +22,7 @@ protected:
 
 private:
     QVLayers::Stack settings;
+    bool compareOriginal = false;
     bool cacheDirty = true;
     QPoint cachedOffset;
     QPixmap cachedPixmap;

@@ -66,6 +66,8 @@ public:
     QString videoErrorString() const;
     QSize currentMediaSize() const;
     QVExport::Source exportSource() const;
+    void setCompareOriginal(bool enabled);
+    bool isComparingOriginal() const { return compareOriginal; }
     QVLayerModel *layerModel() { return &layers; }
     void reloadVideo();
     void closeVideo();
@@ -179,6 +181,7 @@ private:
     QPointF canvasCenterRoundingError;
     NavigationCanvasState navigationCanvasState;
     QVPlaybackLoopMode loopMode;
+    bool compareOriginal = false;
     QVLayerModel layers{ this };
     void updateLayerEffects();
 

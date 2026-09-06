@@ -181,6 +181,8 @@ void ShortcutManager::initializeShortcutsList()
                            "saveframeas",
                            keyBindingsToStringList(QKeySequence::Save),
                            {} });
+    shortcutsList.append({ tr("Compare Original (hold)"), "compareoriginal",
+                           { QKeySequence(Qt::Key_C).toString() }, {} });
     shortcutsList.append({ tr("Layers HUD"),
                            "layers",
                            QStringList(QKeySequence(Qt::Key_H).toString()),

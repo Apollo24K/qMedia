@@ -14,6 +14,13 @@ void QVFilterEffect::setLayerStack(const QVLayers::Stack &newSettings)
     update();
 }
 
+void QVFilterEffect::setCompareOriginal(bool enabled)
+{
+    if (compareOriginal == enabled) return;
+    compareOriginal = enabled;
+    update();
+}
+
 void QVFilterEffect::sourceChanged(ChangeFlags flags)
 {
     cacheDirty = true;
@@ -22,7 +29,7 @@ void QVFilterEffect::sourceChanged(ChangeFlags flags)
 
 void QVFilterEffect::draw(QPainter *painter)
 {
-    if (settings.isNeutral()) {
+    if (compareOriginal || settings.isNeutral()) {
         drawSource(painter);
         return;
     }

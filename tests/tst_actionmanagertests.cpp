@@ -29,6 +29,9 @@
 #include <QWheelEvent>
 #include <QGroupBox>
 #include <QShortcut>
+#include <QPainter>
+#include <QGraphicsPixmapItem>
+#include "qvfiltereffect.h"
 
 class ActionManagerTests : public QObject
 {
@@ -48,6 +51,7 @@ private slots:
     void testExportDialog();
     void testExportCanvasState();
     void testFilterControlsWheelStep();
+    void testHoldCompare();
     void testLayersHud();
     void testLayersHudCursor();
     void testDialogToggleShortcuts();
@@ -97,6 +101,103 @@ void ActionManagerTests::testFilterControlsWheelStep()
     QCOMPARE(toggle->key(), QKeySequence(Qt::Key_U));
     QVERIFY(QMetaObject::invokeMethod(toggle, "activated"));
     QVERIFY(!controls.isVisible());
+}
+
+void ActionManagerTests::testHoldCompare()
+{
+    QTemporaryDir directory;
+    QImage original(80, 60, QImage::Format_ARGB32);
+    original.fill(QColor(40, 90, 140));
+    const QString path = directory.filePath("compare.png");
+    QVERIFY(original.save(path));
+    MainWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    struct CloseWindow { MainWindow &window; ~CloseWindow() { window.close(); } } cleanup{ window };
+    window.show();
+    window.openFile(path);
+    auto *canvas = window.findChild<QVGraphicsView *>();
+    QTRY_VERIFY(canvas->isMediaLoaded());
+    auto *model = canvas->layerModel();
+    model->addFilter();
+    auto layer = model->stack().layers[0];
+    layer.filter.brightness = 40;
+    model->update(layer);
+    const auto stack = model->stack();
+    canvas->zoom(1.7);
+    const auto transform = canvas->transform();
+    const auto center = canvas->mapToScene(canvas->viewport()->rect().center());
+    QTest::keyPress(canvas, Qt::Key_C);
+    QVERIFY(canvas->isComparingOriginal());
+    QKeyEvent repeatRelease(QEvent::KeyRelease, Qt::Key_C, Qt::NoModifier, "c", true);
+    QApplication::sendEvent(canvas, &repeatRelease);
+    QVERIFY(canvas->isComparingOriginal());
+    QVERIFY(model->stack().samePixels(stack));
+    QVERIFY(canvas->exportSource().layers.samePixels(stack));
+    QCOMPARE(canvas->transform(), transform);
+    QCOMPARE(canvas->mapToScene(canvas->viewport()->rect().center()), center);
+    QTest::keyRelease(&window, Qt::Key_C);
+    QVERIFY(!canvas->isComparingOriginal());
+
+    QLineEdit editor(&window);
+    QTest::keyClick(&editor, Qt::Key_C);
+    QCOMPARE(editor.text(), QString("c"));
+    QVERIFY(!canvas->isComparingOriginal());
+    QTest::keyPress(canvas, Qt::Key_C);
+    QEvent deactivate(QEvent::WindowDeactivate);
+    QApplication::sendEvent(&window, &deactivate);
+    QVERIFY(!canvas->isComparingOriginal());
+    QTest::keyRelease(canvas, Qt::Key_C);
+
+    window.showFilters();
+    auto *filters = window.findChild<QVFiltersDialog *>();
+    QVERIFY(filters);
+    auto *slider = filters->findChild<QSlider *>("brightnessSlider");
+    QVERIFY(slider);
+    slider->setFocus();
+    QTest::keyPress(slider, Qt::Key_C);
+    QVERIFY(canvas->isComparingOriginal());
+    filters->hide();
+    QVERIFY(!canvas->isComparingOriginal());
+    QTest::keyRelease(canvas, Qt::Key_C);
+    window.activateWindow();
+    canvas->setFocus();
+
+    QSettings settings;
+    settings.setValue("shortcuts/compareoriginal", QStringList{ "Shift+B" });
+    qvApp->getShortcutManager().updateShortcuts();
+    struct ResetShortcut {
+        ~ResetShortcut() {
+            QSettings().remove("shortcuts/compareoriginal");
+            qvApp->getShortcutManager().updateShortcuts();
+        }
+    } resetShortcut;
+    QTest::keyPress(canvas, Qt::Key_C);
+    QVERIFY(!canvas->isComparingOriginal());
+    QTest::keyRelease(canvas, Qt::Key_C);
+    QTest::keyPress(canvas, Qt::Key_B, Qt::ShiftModifier);
+    QVERIFY(canvas->isComparingOriginal());
+    QTest::keyRelease(canvas, Qt::Key_B); // Modifiers may be released first.
+    QVERIFY(!canvas->isComparingOriginal());
+
+    // Check pixels numerically without launching or inspecting the app visually.
+    QGraphicsScene scene;
+    auto *item = scene.addPixmap(QPixmap::fromImage(original));
+    auto *effect = new QVFilterEffect;
+    item->setGraphicsEffect(effect);
+    effect->setLayerStack(stack);
+    const auto render = [&]() {
+        QImage result(original.size(), QImage::Format_ARGB32);
+        result.fill(Qt::transparent);
+        QPainter painter(&result);
+        scene.render(&painter, QRectF(original.rect()), QRectF(original.rect()));
+        return result;
+    };
+    const auto edited = render();
+    QVERIFY(edited.pixelColor(20, 20) != original.pixelColor(20, 20));
+    effect->setCompareOriginal(true);
+    QCOMPARE(render().pixelColor(20, 20), original.pixelColor(20, 20));
+    effect->setCompareOriginal(false);
+    QCOMPARE(render(), edited);
 }
 
 void ActionManagerTests::testLayersHud()

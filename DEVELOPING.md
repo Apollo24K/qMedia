@@ -64,6 +64,12 @@ for the build.
 
 ## Layers HUD
 
+Hold C to compare against the original decoded image or video frame; release it
+to restore the layer composite. Pan, zoom, playback, layer settings, and exports
+are unchanged. Comparison also ends when the window loses focus. The shortcut
+works in the canvas, Layers HUD, and Filters window, except while entering text
+or numeric values. Customize **Compare Original (hold)** in Settings > Shortcuts.
+
 H toggles a floating Layers panel and a slim SVG tool strip. Drag their headers
 to move them; they snap to the canvas edges. The Layers panel defaults to the
 bottom-right, while the tool strip defaults to the top-left. Drag any edge or corner of the Layers

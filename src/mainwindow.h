@@ -150,6 +150,7 @@ public slots:
 
 protected:
     bool event(QEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
     void contextMenuEvent(QContextMenuEvent *event) override;
 
@@ -185,6 +186,8 @@ private:
     QShortcut *escShortcut;
 
     QVInfoDialog *info;
+    int compareHeldKey = 0;
+    QList<QKeySequence> compareShortcuts;
     QVLayersHud *layersHud = nullptr;
     void ensureLayersHud();
     void openFilters(quint64 layerId = 0);
