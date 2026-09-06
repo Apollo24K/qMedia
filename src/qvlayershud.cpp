@@ -571,7 +571,15 @@ QVLayersHud::QVLayersHud(QVLayerModel *layerModel, QWidget *viewport)
     connect(removeButton, &QToolButton::clicked, this, [this] { model->remove(selectedId()); });
     list->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(list, &QWidget::customContextMenuRequested, this, &QVLayersHud::showLayerMenu);
-    layerList->iconClicked = [this](quint64 id) { emit filtersRequested(id); };
+    layerList->iconClicked = [this](quint64 id) {
+        const int index = model->indexOf(id);
+        if (index < 0) return;
+        if (model->stack().layers[index].kind == QVLayers::Kind::Distort) {
+            if (!distortButton->isEnabled()) return;
+            setDistortActive(true);
+            emit distortRequested(true);
+        } else emit filtersRequested(id);
+    };
     layerList->removed = [this] { model->remove(selectedId()); };
     layerList->moved = [this](quint64 id, int index) { model->move(id, index); select(id); };
     connect(upButton, &QToolButton::clicked, this, [this] { moveSelection(-1); });
@@ -690,7 +698,7 @@ void QVLayersHud::refresh()
         const auto &layer = model->stack().layers[i];
         auto *item = rebuild ? new QListWidgetItem(list) : list->item(i);
         item->setData(Qt::UserRole, QVariant::fromValue(layer.id));
-        item->setData(Qt::UserRole + 1, layer.kind == QVLayers::Kind::Filter);
+        item->setData(Qt::UserRole + 1, layer.kind != QVLayers::Kind::Source);
         item->setText(layer.name);
         item->setIcon(icon(layer.kind == QVLayers::Kind::Source ? "source"
                 : layer.kind == QVLayers::Kind::Distort ? "distort" : "filter"));
@@ -787,6 +795,8 @@ void QVLayersHud::showLayerMenu(const QPoint &position)
         });
         addAction(tr("Undo last stroke"), "layerUndoStroke", [this, id] { model->undoDistort(id); })
                 ->setEnabled(!layer.strokes.isEmpty());
+        addAction(tr("Redo stroke"), "layerRedoStroke", [this, id] { model->redoDistort(id); })
+                ->setEnabled(!layer.redoStrokes.isEmpty());
         addAction(tr("Reset distortion"), "layerResetDistort", [this, id] {
             const int row = model->indexOf(id);
             if (row < 0) return;

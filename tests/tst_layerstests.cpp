@@ -10,11 +10,42 @@ class LayersTests : public QObject
 private slots:
     void distortion();
     void canvasBounds();
+    void distortionRedo();
     void sourceAndAdjustment();
     void blendModes();
     void modelEdits();
     void ffmpegMatchesComposite();
 };
+
+void LayersTests::distortionRedo()
+{
+    QVLayerModel model;
+    const auto id = model.addDistort();
+    auto layer = model.stack().layers[0];
+    QVLayers::DistortStroke a, b;
+    a.points = {QPointF(.2,.2), QPointF(.3,.3)};
+    b.points = {QPointF(.4,.4), QPointF(.5,.5)};
+    layer.strokes = {a, b};
+    model.update(layer);
+    model.undoDistort(id);
+    model.undoDistort(id);
+    QVERIFY(model.stack().layers[0].strokes.isEmpty());
+    model.redoDistort(id);
+    QCOMPARE(model.stack().layers[0].strokes, QVector<QVLayers::DistortStroke>{a});
+    layer = model.stack().layers[0];
+    layer.name = "Renamed";
+    layer.strength = 60;
+    model.update(layer);
+    model.redoDistort(id);
+    QCOMPARE(model.stack().layers[0].strokes, (QVector<QVLayers::DistortStroke>{a,b}));
+    model.undoDistort(id);
+    layer = model.stack().layers[0];
+    layer.strokes.append(a);
+    model.update(layer);
+    model.redoDistort(id);
+    QCOMPARE(model.stack().layers[0].strokes, (QVector<QVLayers::DistortStroke>{a,a}));
+    QVERIFY(model.stack().layers[0].redoStrokes.isEmpty());
+}
 
 void LayersTests::canvasBounds()
 {

@@ -72,6 +72,7 @@ public:
     void setDistortActive(bool active);
     void setDistortRadius(int radius);
     void undoDistort();
+    void redoDistort();
     void setDistortLayer(quint64 id) { selectedDistortLayer = id; }
     bool isDistortActive() const { return distortActive; }
     bool isCropActive() const { return cropActive; }
@@ -226,7 +227,7 @@ private:
     int distortRadius = 48;
     quint64 selectedDistortLayer = 0;
     quint64 strokeLayer = 0;
-    QPointF distortPosition;
+    QPoint distortPosition; // Viewport coordinates: the brush stays with the cursor during zoom.
     QPointF strokeStart;
     double strokeRadius = 0.1;
     QString distortSource;

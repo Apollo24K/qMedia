@@ -62,6 +62,7 @@ private slots:
     void testCanvasCopy();
     void testCanvasCrop();
     void testDistortCache();
+    void testBrushZoom();
     void testLayersHud();
     void testLayersHudCursor();
     void testDialogToggleShortcuts();
@@ -323,6 +324,13 @@ void ActionManagerTests::testDistortShortcut()
     QTest::keyRelease(canvas, Qt::Key_D);
     QVERIFY(!canvas->isDistortActive());
     QVERIFY(pan->isChecked());
+    window.toggleLayers();
+    window.showFullScreen();
+    QTest::keyClick(canvas, Qt::Key_Escape);
+    QVERIFY(!canvas->findChild<QVLayersHud *>()->isVisible());
+    QVERIFY(window.isFullScreen());
+    QTest::keyClick(canvas, Qt::Key_Escape);
+    QVERIFY(!window.isFullScreen());
 
     QSettings().setValue("shortcuts/distort", QStringList{"Shift+D"});
     qvApp->getShortcutManager().updateShortcuts();
@@ -485,6 +493,37 @@ void ActionManagerTests::testCanvasCopy()
     canvas->setCompareOriginal(false);
 }
 
+void ActionManagerTests::testBrushZoom()
+{
+    QTemporaryDir directory;
+    QImage image(200, 160, QImage::Format_RGB32);
+    image.fill(Qt::gray);
+    const auto path = directory.filePath("brush.png");
+    QVERIFY(image.save(path));
+    struct Canvas : QVGraphicsView { using QVGraphicsView::drawForeground; } canvas;
+    canvas.resize(640, 480);
+    canvas.show();
+    canvas.loadFile(path);
+    QTRY_VERIFY(canvas.canDistort());
+    canvas.setDistortActive(true);
+    QTest::mouseMove(canvas.viewport(), QPoint(210, 190));
+    const auto overlay = [&] {
+        QImage result(canvas.viewport()->size(), QImage::Format_ARGB32);
+        result.fill(Qt::transparent);
+        QPainter painter(&result);
+        canvas.drawForeground(&painter, canvas.sceneRect());
+        return result;
+    };
+    const auto before = overlay();
+    QVERIFY(before.pixelColor(258, 190).alpha() > 0);
+    canvas.zoom(1.5);
+    QCOMPARE(overlay(), before);
+    canvas.scaleExpensively();
+    QCOMPARE(overlay(), before);
+    canvas.zoom(0.5);
+    QCOMPARE(overlay(), before);
+}
+
 void ActionManagerTests::testDistortCache()
 {
     QImage source(80, 60, QImage::Format_ARGB32);
@@ -510,7 +549,10 @@ void ActionManagerTests::testDistortCache()
         QPainter painter(&rendered);
         scene.render(&painter, QRectF(rendered.rect()), QRectF(bounds));
         painter.end();
-        QCOMPARE(rendered, QVLayers::apply(source, stack));
+        const auto expected = QVLayers::apply(source, stack);
+        QCOMPARE(rendered.size(), expected.size());
+        for (int y = 0; y < expected.height(); ++y) for (int x = 0; x < expected.width(); ++x)
+            QCOMPARE(rendered.pixelColor(x,y), expected.pixelColor(x,y));
     };
     check();
     stack.layers[0].strokes[0].points.append(QPointF(0.55, 0.5));
@@ -526,6 +568,13 @@ void ActionManagerTests::testDistortCache()
     stack.canvas = QRectF(-0.25, 0, 1.5, 1.5);
     check();
     stack.canvas = QRectF(0.25, 0.5, 0.5, 0.5);
+    check();
+    source.fill(Qt::green);
+    item->setPixmap(QPixmap::fromImage(source));
+    check();
+    source = QImage(100, 80, QImage::Format_ARGB32);
+    source.fill(Qt::blue);
+    item->setPixmap(QPixmap::fromImage(source));
     check();
 }
 
@@ -566,6 +615,10 @@ void ActionManagerTests::testDistortTool()
     QTest::keyClicks(&editor, "abc");
     QTest::keyClick(&editor, Qt::Key_Z, Qt::ControlModifier);
     QCOMPARE(editor.text(), QString());
+    QCOMPARE(canvas->layerModel()->stack().layers[0].strokes.size(), 1);
+    QTest::keyClick(canvas, Qt::Key_Z, Qt::ControlModifier);
+    QVERIFY(canvas->layerModel()->stack().layers[0].strokes.isEmpty());
+    QTest::keyClick(canvas, Qt::Key_Y, Qt::ControlModifier);
     QCOMPARE(canvas->layerModel()->stack().layers[0].strokes.size(), 1);
     QTest::keyClick(canvas, Qt::Key_Z, Qt::ControlModifier);
     QVERIFY(canvas->layerModel()->stack().layers[0].strokes.isEmpty());
@@ -693,6 +746,17 @@ void ActionManagerTests::testLayersHud()
     QCOMPARE(filterRequests.first().first().toULongLong(), filterId);
     QVERIFY(dialog->isVisible());
     window.showFilters();
+    const auto distortId = canvas->layerModel()->addDistort();
+    list->setCurrentRow(0);
+    inspector.initStyleOption(&option, list->currentIndex());
+    option.rect = list->visualItemRect(list->currentItem());
+    const auto distortIcon = list->style()->subElementRect(QStyle::SE_ItemViewItemDecoration, &option, list);
+    QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, distortIcon.center());
+    QVERIFY(canvas->isDistortActive());
+    QCOMPARE(hud->selectedLayerId(), distortId);
+    QCOMPARE(filterRequests.count(), 1);
+    canvas->findChild<QToolButton *>("layersPan")->click();
+    canvas->layerModel()->remove(distortId);
     auto contextMenu = [list, rightPanel](int row) {
         const QPoint position = list->visualItemRect(list->item(row)).center();
         QContextMenuEvent event(QContextMenuEvent::Mouse, position, list->viewport()->mapToGlobal(position));

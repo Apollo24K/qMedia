@@ -34,6 +34,7 @@ struct Layer {
     Blend blend = Blend::Normal;
     QVFilters::Layer filter;
     QVector<DistortStroke> strokes;
+    QVector<DistortStroke> redoStrokes;
     bool samePixels(const Layer &other) const;
 };
 
@@ -64,6 +65,7 @@ public:
     quint64 addDistort(int above = 0);
     void clearDistortions();
     void undoDistort(quint64 id);
+    void redoDistort(quint64 id);
     quint64 duplicate(quint64 id);
     bool remove(quint64 id);
     bool move(quint64 id, int index);

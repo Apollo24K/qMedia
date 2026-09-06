@@ -359,9 +359,21 @@ void QVLayerModel::undoDistort(quint64 id)
     const int index = indexOf(id);
     if (index < 0 || current.layers[index].kind != QVLayers::Kind::Distort
             || current.layers[index].strokes.isEmpty()) return;
-    auto layer = current.layers[index];
-    layer.strokes.removeLast();
-    update(layer);
+    auto &layer = current.layers[index];
+    layer.redoStrokes.append(layer.strokes.takeLast());
+    emit changed();
+    emit pixelsChanged();
+}
+
+void QVLayerModel::redoDistort(quint64 id)
+{
+    const int index = indexOf(id);
+    if (index < 0 || current.layers[index].kind != QVLayers::Kind::Distort
+            || current.layers[index].redoStrokes.isEmpty()) return;
+    auto &layer = current.layers[index];
+    layer.strokes.append(layer.redoStrokes.takeLast());
+    emit changed();
+    emit pixelsChanged();
 }
 
 void QVLayerModel::clearDistortions()
@@ -422,6 +434,7 @@ void QVLayerModel::update(const QVLayers::Layer &layer)
     updated.strength = qBound(0, updated.strength, 100);
     updated.name = updated.name.trimmed().left(120);
     if (updated.name.isEmpty()) updated.name = current.layers[index].name;
+    if (updated.strokes != current.layers[index].strokes) updated.redoStrokes.clear();
     const bool pixels = !current.layers[index].samePixels(updated);
     current.layers[index] = updated;
     emit changed();

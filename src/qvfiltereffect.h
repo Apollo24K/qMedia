@@ -25,6 +25,8 @@ private:
     QVLayers::Stack settings;
     bool compareOriginal = false;
     bool cacheDirty = true;
+    bool sourceDirty = true;
+    qint64 cachedSourceKey = 0;
     QPoint cachedOffset;
     QPointF canvasOffset;
     QPixmap cachedPixmap;

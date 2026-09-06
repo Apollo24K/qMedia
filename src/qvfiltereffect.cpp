@@ -67,7 +67,7 @@ void QVFilterEffect::setCompareOriginal(bool enabled)
 
 void QVFilterEffect::sourceChanged(ChangeFlags flags)
 {
-    cacheDirty = true;
+    sourceDirty = true;
     QGraphicsEffect::sourceChanged(flags);
 }
 
@@ -86,10 +86,20 @@ void QVFilterEffect::draw(QPainter *painter)
         return;
     }
 
-    if (cacheDirty || cachedPixmap.isNull()) {
+    // Pixmap source notifications may be deferred until scene updates run.
+    // Its cheap content key also catches replacements before that notification.
+    if (cacheDirty || sourceDirty || sourceIsPixmap() || cachedPixmap.isNull()) {
         const QPixmap source = sourcePixmap(Qt::LogicalCoordinates, &cachedOffset, NoPad);
         if (source.isNull())
             return;
+        // Logical pixmap pixels can stay identical through view transforms and
+        // source invalidation notifications. Reuse the composite in that case.
+        sourceDirty = false;
+        if (!cacheDirty && !cachedPixmap.isNull() && source.cacheKey() == cachedSourceKey) {
+            painter->drawPixmap(QPointF(cachedOffset) + canvasOffset, cachedPixmap);
+            return;
+        }
+        cachedSourceKey = source.cacheKey();
         const QRect bounds = QVLayers::canvasPixels(source.size(), settings.canvas);
         canvasOffset = settings.hasCanvas() ? QPointF(bounds.topLeft()) / source.devicePixelRatio() : QPointF();
         cachedPixmap = QPixmap::fromImage(QVLayers::apply(source.toImage(), settings));

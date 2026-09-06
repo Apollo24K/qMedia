@@ -85,8 +85,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     // Initialize escape shortcut
     escShortcut = new QShortcut(Qt::Key_Escape, this);
+    escShortcut->setAutoRepeat(false);
     connect(escShortcut, &QShortcut::activated, this, [this]() {
-        if (windowState().testFlag(Qt::WindowFullScreen))
+        if (layersHud && layersHud->isVisible()) layersHud->setVisible(false);
+        else if (windowState().testFlag(Qt::WindowFullScreen))
             toggleFullScreen();
     });
 
@@ -266,9 +268,19 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         event->accept();
         return true;
     }
+    if (layersHud && layersHud->isVisible() && widget->window() == this
+            && key->key() == Qt::Key_Escape && key->modifiers() == Qt::NoModifier) {
+        if (event->type() == QEvent::KeyPress && !key->isAutoRepeat()) layersHud->setVisible(false);
+        event->accept();
+        return true;
+    }
     const QKeySequence pressed(key->key() | int(key->modifiers()));
-    if (graphicsView->isDistortActive() && pressed == QKeySequence(Qt::CTRL | Qt::Key_Z)) {
-        if (event->type() == QEvent::KeyPress && !key->isAutoRepeat()) graphicsView->undoDistort();
+    if (graphicsView->isDistortActive() && (pressed == QKeySequence(Qt::CTRL | Qt::Key_Z)
+            || pressed == QKeySequence(Qt::CTRL | Qt::Key_Y))) {
+        if (event->type() == QEvent::KeyPress && !key->isAutoRepeat()) {
+            if (key->key() == Qt::Key_Y) graphicsView->redoDistort();
+            else graphicsView->undoDistort();
+        }
         event->accept();
         return true;
     }

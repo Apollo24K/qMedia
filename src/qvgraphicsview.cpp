@@ -303,7 +303,7 @@ void QVGraphicsView::mouseMoveEvent(QMouseEvent *event)
         return;
     }
     if (distortActive) {
-        distortPosition = mapToScene(event->pos());
+        distortPosition = event->pos();
         distortHover = true;
         viewport()->update();
         if (distortDragging) {
@@ -1296,6 +1296,16 @@ void QVGraphicsView::undoDistort()
     layers.undoDistort(id);
 }
 
+void QVGraphicsView::redoDistort()
+{
+    if (!distortActive) return;
+    quint64 id = selectedDistortLayer;
+    const int index = layers.indexOf(id);
+    if (index < 0 || layers.stack().layers[index].kind != QVLayers::Kind::Distort) id = strokeLayer;
+    distortDragging = false;
+    layers.redoDistort(id);
+}
+
 void QVGraphicsView::setDistortRadius(int radius)
 {
     distortRadius = qBound(8, radius, 200);
@@ -1378,7 +1388,7 @@ void QVGraphicsView::drawForeground(QPainter *painter, const QRectF &rect)
     }
     if (!distortActive || !distortHover || compareOriginal) return;
     painter->save();
-    const QPoint center = mapFromScene(distortPosition);
+    const QPoint center = distortPosition;
     painter->resetTransform();
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setBrush(Qt::NoBrush);
