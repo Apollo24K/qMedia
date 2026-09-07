@@ -167,6 +167,10 @@ QMenuBar *ActionManager::buildMenuBar(QWidget *parent)
     addCloneOfAction(fileMenu, "newwindow");
 #endif
     addCloneOfAction(fileMenu, "open");
+    addCloneOfAction(fileMenu, "openfolder");
+    addCloneOfAction(fileMenu, "browsefolder");
+    addCloneOfAction(fileMenu, "browsechild");
+    addCloneOfAction(fileMenu, "home");
     addCloneOfAction(fileMenu, "openurl");
     fileMenu->addMenu(buildRecentsMenu(true, fileMenu));
     addCloneOfAction(fileMenu, "reloadfile");
@@ -532,8 +536,14 @@ void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *releva
         qvApp->newWindow();
     } else if (key == "open") {
         qvApp->pickFile(relevantWindow);
-    } else if (key == "open") {
-        qvApp->pickFile(relevantWindow);
+    } else if (key == "openfolder") {
+        relevantWindow->pickFolder();
+    } else if (key == "browsefolder") {
+        relevantWindow->browseParentFolder();
+    } else if (key == "browsechild") {
+        relevantWindow->browseChildFolder();
+    } else if (key == "home") {
+        relevantWindow->showHome();
     } else if (key == "closewindow") {
         auto *active = QApplication::activeWindow();
 #ifdef COCOA_LOADED
@@ -664,6 +674,16 @@ void ActionManager::initializeActionLibrary()
 
     auto *openAction = new QAction(QIcon::fromTheme("document-open"), tr("&Open..."));
     actionLibrary.insert("open", openAction);
+
+    auto *openFolderAction = new QAction(QIcon::fromTheme("folder-open"), tr("Open &Folder..."));
+    actionLibrary.insert("openfolder", openFolderAction);
+    auto *browseFolderAction = new QAction(QIcon::fromTheme("go-up"), tr("Browse Parent Folder"));
+    actionLibrary.insert("browsefolder", browseFolderAction);
+    auto *browseChildAction = new QAction(QIcon::fromTheme("go-down"), tr("Return to Child"));
+    browseChildAction->setData({ "historydisable" });
+    actionLibrary.insert("browsechild", browseChildAction);
+    auto *homeAction = new QAction(QIcon::fromTheme("go-home"), tr("&Home"));
+    actionLibrary.insert("home", homeAction);
 
     auto *openUrlAction =
             new QAction(QIcon::fromTheme("document-open-remote", QIcon::fromTheme("folder-remote")),

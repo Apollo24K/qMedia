@@ -60,6 +60,9 @@ set(PROJECT_SOURCES
     src/qvinfodialog.cpp
     src/qvimagecore.cpp
     src/qvmediacatalog.cpp
+    src/qvgallerymodel.cpp
+    src/qvgalleryview.cpp
+    src/qvfileoperations.cpp
     src/qvmediaformats.cpp
     src/qvclipboard.cpp
     src/qvexport.cpp
@@ -89,6 +92,9 @@ set(PROJECT_HEADERS
     src/qvinfodialog.h
     src/qvimagecore.h
     src/qvmediacatalog.h
+    src/qvgallerymodel.h
+    src/qvgalleryview.h
+    src/qvfileoperations.h
     src/qvmediaformats.h
     src/qvexport.h
     src/qvexportdialog.h

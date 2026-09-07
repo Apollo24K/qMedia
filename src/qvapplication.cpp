@@ -10,6 +10,35 @@
 #include <QFileDialog>
 #include <QFontDatabase>
 
+namespace {
+class MediaOpenDialog : public QFileDialog
+{
+public:
+    explicit MediaOpenDialog(QWidget *parent) : QFileDialog(parent, tr("Open"))
+    {
+        // Native file dialogs treat Open on a directory only as navigation.
+        // Keep Qt's normal double-click navigation while allowing Open to select it.
+        setOption(QFileDialog::DontUseNativeDialog);
+        setFileMode(QFileDialog::ExistingFiles);
+        setAttribute(Qt::WA_DeleteOnClose);
+    }
+
+    void accept() override
+    {
+        const QStringList paths = selectedFiles();
+        if (paths.isEmpty()) return;
+        for (const QString &path : paths) {
+            if (!QFileInfo::exists(path)) {
+                QFileDialog::accept();
+                return;
+            }
+        }
+        emit filesSelected(paths);
+        QDialog::accept();
+    }
+};
+}
+
 QVApplication::QVApplication(int &argc, char **argv) : QApplication(argc, argv)
 {
     setDesktopFileName("io.github.apollo24k.qmedia.desktop");
@@ -110,9 +139,8 @@ void QVApplication::pickFile(MainWindow *parent)
     QSettings settings;
     settings.beginGroup("recents");
 
-    auto *fileDialog = new QFileDialog(parent, tr("Open..."));
+    auto *fileDialog = new MediaOpenDialog(parent);
     fileDialog->setDirectory(settings.value("lastFileDialogDir", QDir::homePath()).toString());
-    fileDialog->setFileMode(QFileDialog::ExistingFiles);
     fileDialog->setNameFilters(qvApp->getNameFilterList());
     if (parent)
         fileDialog->setWindowModality(Qt::WindowModal);
@@ -132,7 +160,8 @@ void QVApplication::pickFile(MainWindow *parent)
                 // Set lastFileDialogDir
                 QSettings settings;
                 settings.beginGroup("recents");
-                settings.setValue("lastFileDialogDir", QFileInfo(selected.constFirst()).path());
+                const QFileInfo first(selected.constFirst());
+                settings.setValue("lastFileDialogDir", first.isDir() ? first.absoluteFilePath() : first.path());
             });
     fileDialog->show();
 }
@@ -155,7 +184,7 @@ MainWindow *QVApplication::getMainWindow(bool shouldBeEmpty)
 
         if (shouldBeEmpty) {
             // File info is set if an image load is requested, but not loaded
-            if (!window->getCurrentMedia().isLoadRequested) {
+            if (!window->getCurrentMedia().isLoadRequested && !window->isBrowsingFolder()) {
                 return window;
             }
         } else {
@@ -168,7 +197,7 @@ MainWindow *QVApplication::getMainWindow(bool shouldBeEmpty)
     for (const auto &widget : topLevelWidgets) {
         if (auto *window = qobject_cast<MainWindow *>(widget)) {
             if (shouldBeEmpty) {
-                if (!window->getCurrentMedia().isLoadRequested) {
+                if (!window->getCurrentMedia().isLoadRequested && !window->isBrowsingFolder()) {
                     return window;
                 }
             } else {

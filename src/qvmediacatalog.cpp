@@ -2,6 +2,7 @@
 
 #include <QCollator>
 #include <QDir>
+#include <QHash>
 #include <QMimeDatabase>
 
 #include <algorithm>
@@ -104,36 +105,38 @@ QList<QVMediaCatalog::MediaFile> QVMediaCatalog::scanFolder(const QString &dirPa
 
 void QVMediaCatalog::sortFiles(QList<MediaFile> &files, int sortMode, bool sortDescending)
 {
+    // Equal metadata keys keep a deterministic filename order in every scan.
+    if (sortMode > 0 && sortMode < 5) sortFiles(files, 0, sortDescending);
     switch (sortMode) {
     case 0: {
         QCollator collator;
         collator.setNumericMode(true);
-        std::sort(files.begin(), files.end(), [&](const MediaFile &file1, const MediaFile &file2) {
+        std::stable_sort(files.begin(), files.end(), [&](const MediaFile &file1, const MediaFile &file2) {
             return sortDescending ? collator.compare(file1.fileName, file2.fileName) > 0
                                   : collator.compare(file1.fileName, file2.fileName) < 0;
         });
         break;
     }
     case 1:
-        std::sort(files.begin(), files.end(), [&](const MediaFile &file1, const MediaFile &file2) {
+        std::stable_sort(files.begin(), files.end(), [&](const MediaFile &file1, const MediaFile &file2) {
             return sortDescending ? file1.lastModified < file2.lastModified
                                   : file1.lastModified > file2.lastModified;
         });
         break;
     case 2:
-        std::sort(files.begin(), files.end(), [&](const MediaFile &file1, const MediaFile &file2) {
+        std::stable_sort(files.begin(), files.end(), [&](const MediaFile &file1, const MediaFile &file2) {
             return sortDescending ? file1.lastCreated < file2.lastCreated
                                   : file1.lastCreated > file2.lastCreated;
         });
         break;
     case 3:
-        std::sort(files.begin(), files.end(), [&](const MediaFile &file1, const MediaFile &file2) {
+        std::stable_sort(files.begin(), files.end(), [&](const MediaFile &file1, const MediaFile &file2) {
             return sortDescending ? file1.size < file2.size : file1.size > file2.size;
         });
         break;
     case 4: {
         QCollator collator;
-        std::sort(files.begin(), files.end(), [&](const MediaFile &file1, const MediaFile &file2) {
+        std::stable_sort(files.begin(), files.end(), [&](const MediaFile &file1, const MediaFile &file2) {
             return sortDescending ? collator.compare(file1.mimeType, file2.mimeType) > 0
                                   : collator.compare(file1.mimeType, file2.mimeType) < 0;
         });
@@ -151,6 +154,26 @@ void QVMediaCatalog::sortFiles(QList<MediaFile> &files, int sortMode, bool sortD
     }
 }
 
+QList<QVMediaCatalog::FolderEntry> QVMediaCatalog::scanGallery(
+        const QString &dirPath, const ScanOptions &options)
+{
+    QList<FolderEntry> entries;
+    QDir::Filters filters = QDir::Dirs | QDir::NoDotAndDotDot;
+    if (options.includeHidden) filters |= QDir::Hidden;
+    QList<MediaFile> folders;
+    const auto directories = QDir(dirPath).entryInfoList(filters, QDir::Unsorted);
+    for (const auto &directory : directories) {
+        if (!directory.fileName().startsWith("._"))
+            folders.append({ directory.absoluteFilePath(), directory.fileName() });
+    }
+    sortFiles(folders, 0, options.sortDescending);
+    for (const auto &folder : folders) entries.append({ folder, true });
+    auto media = scanFolder(dirPath, options);
+    sortFiles(media, options.sortMode, options.sortDescending);
+    for (const auto &file : media) entries.append({ file, false });
+    return entries;
+}
+
 void QVMediaCatalog::updateFolder(QString dirPath, const ScanOptions &options)
 {
     if (dirPath.isEmpty()) {
@@ -159,15 +182,34 @@ void QVMediaCatalog::updateFolder(QString dirPath, const ScanOptions &options)
             return;
     }
 
-    currentState.folderFiles = scanFolder(dirPath, options);
-    const DirInfo dirInfo = { dirPath, currentState.folderFiles.count(), options.sortMode,
+    auto files = scanFolder(dirPath, options);
+    const DirInfo dirInfo = { QDir(dirPath).absolutePath(), files.count(), options.sortMode,
                               options.sortDescending };
-    const bool shouldSort = lastDirInfo != dirInfo;
+    if (options.sortMode == 5 && lastDirInfo.dirPath == dirInfo.dirPath
+            && lastDirInfo.sortMode == 5) {
+        // A rescan must not reshuffle neighbors. Keep surviving entries in their
+        // existing order and append newly discovered files.
+        QHash<QString, int> ranks;
+        for (int i = 0; i < currentState.folderFiles.size(); ++i)
+            ranks.insert(currentState.folderFiles[i].absoluteFilePath, i);
+        std::stable_sort(files.begin(), files.end(), [&](const MediaFile &a, const MediaFile &b) {
+            return ranks.value(a.absoluteFilePath, ranks.size()) < ranks.value(b.absoluteFilePath, ranks.size());
+        });
+    } else {
+        // scanFolder returns filesystem order, even when the folder/count is unchanged.
+        sortFiles(files, options.sortMode, options.sortDescending);
+    }
+    currentState.folderFiles = files;
     lastDirInfo = dirInfo;
 
-    if (shouldSort)
-        sortFiles(currentState.folderFiles, options.sortMode, options.sortDescending);
+    updateCurrentIndex();
+}
 
+void QVMediaCatalog::setFolderOrder(const QString &path, const QList<MediaFile> &files,
+                                    const ScanOptions &options)
+{
+    currentState.folderFiles = files;
+    lastDirInfo = { QDir(path).absolutePath(), files.count(), options.sortMode, options.sortDescending };
     updateCurrentIndex();
 }
 

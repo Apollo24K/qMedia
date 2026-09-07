@@ -32,6 +32,10 @@ public:
     Q_ENUM(GoToFileMode)
 
     QMimeData *getMimeData() const;
+    void setFolderOrder(const QString &path, const QList<QVMediaCatalog::MediaFile> &files,
+                        const QVMediaCatalog::ScanOptions &options) {
+        imageCore.setFolderOrder(path, files, options);
+    }
     void loadMimeData(const QMimeData *mimeData);
     void loadFile(const QString &fileName);
 
@@ -100,6 +104,8 @@ public:
     const QMovie &getLoadedMovie() const { return imageCore.getLoadedMovie(); }
 
 signals:
+    void folderRequested(const QString &path);
+    void mediaRequested();
     void cancelSlideshow();
 
     void fileChanged();

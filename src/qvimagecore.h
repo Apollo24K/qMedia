@@ -1,4 +1,4 @@
-﻿#ifndef QVIMAGECORE_H
+#ifndef QVIMAGECORE_H
 #define QVIMAGECORE_H
 
 #include <QObject>
@@ -54,6 +54,10 @@ public:
 
     explicit QVImageCore(QObject *parent = nullptr);
 
+    void setFolderOrder(const QString &path, const QList<QVMediaCatalog::MediaFile> &files,
+                        const QVMediaCatalog::ScanOptions &options) {
+        mediaCatalog.setFolderOrder(path, files, options);
+    }
     void loadFile(const QString &fileName, bool isReloading = false);
     void activateExternalMedia(const QString &fileName, QVMediaCatalog::MediaType mediaType);
     QVMediaCatalog::MediaType mediaTypeForFile(const QFileInfo &fileInfo) const;

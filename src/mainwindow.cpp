@@ -7,6 +7,10 @@
 #include "qvexportdialog.h"
 #include "qvlayershud.h"
 #include "qvfiltersdialog.h"
+#include "qvgalleryview.h"
+#include "qvfileoperations.h"
+#include <QScopedValueRollback>
+#include <QStackedWidget>
 
 #include <QFileDialog>
 #include <QMessageBox>
@@ -43,6 +47,16 @@
 #include <QAbstractSpinBox>
 #include <QKeySequenceEdit>
 
+namespace {
+class ContentPages : public QStackedWidget
+{
+public:
+    using QStackedWidget::QStackedWidget;
+    // The home page's layout must not constrain native-size media windows.
+    QSize minimumSizeHint() const override { return QSize(0, 0); }
+};
+}
+
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
@@ -62,7 +76,19 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // Images and videos share one graphics canvas so navigation and transforms
     // behave consistently for every visual media type.
     graphicsView = new QVGraphicsView(this);
-    centralWidget()->layout()->addWidget(graphicsView);
+    contentPages = new ContentPages(this);
+    galleryView = new QVGalleryView(contentPages);
+    contentPages->addWidget(galleryView);
+    contentPages->addWidget(graphicsView);
+    centralWidget()->layout()->addWidget(contentPages);
+    connect(galleryView, &QVGalleryView::pathActivated, this, &MainWindow::openFile);
+    connect(galleryView, &QVGalleryView::openFileRequested, this, [this] { qvApp->pickFile(this); });
+    connect(galleryView, &QVGalleryView::fullscreenRequested, this, &MainWindow::toggleFullScreen);
+    connect(galleryView, &QVGalleryView::selectionChanged, this, &MainWindow::disableActions);
+    connect(graphicsView, &QVGraphicsView::folderRequested, this, [this](const QString &path) {
+        showFolder(path);
+    });
+    connect(graphicsView, &QVGraphicsView::mediaRequested, this, &MainWindow::showViewer);
     qApp->installEventFilter(this);
 
     // Hide fullscreen label by default
@@ -87,7 +113,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     escShortcut = new QShortcut(Qt::Key_Escape, this);
     escShortcut->setAutoRepeat(false);
     connect(escShortcut, &QShortcut::activated, this, [this]() {
-        if (layersHud && layersHud->isVisible()) layersHud->setVisible(false);
+        if (isBrowsingFolder() && galleryView->hasSelection()) galleryView->clearSelection();
+        else if (layersHud && layersHud->isVisible()) layersHud->setVisible(false);
         else if (windowState().testFlag(Qt::WindowFullScreen))
             toggleFullScreen();
     });
@@ -108,6 +135,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     contextMenu = new QMenu(this);
 
     actionManager.addCloneOfAction(contextMenu, "open");
+    actionManager.addCloneOfAction(contextMenu, "openfolder");
+    actionManager.addCloneOfAction(contextMenu, "browsefolder");
+    actionManager.addCloneOfAction(contextMenu, "browsechild");
+    actionManager.addCloneOfAction(contextMenu, "home");
     actionManager.addCloneOfAction(contextMenu, "openurl");
     contextMenu->addMenu(actionManager.buildRecentsMenu(true, contextMenu));
     contextMenu->addMenu(actionManager.buildOpenWithMenu(contextMenu));
@@ -176,6 +207,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // Load window geometry
     QSettings settings;
     restoreGeometry(settings.value("geometry").toByteArray());
+    showHome();
+    connect(&actionManager, &ActionManager::recentsMenuUpdated, this, [this] {
+        if (contentPages->currentWidget() == galleryView && galleryView->isHome()) refreshHomeRecents();
+    });
 
     // Show welcome dialog on first launch
     if (!settings.value("firstlaunch", false).toBool()) {
@@ -211,6 +246,19 @@ void MainWindow::finishDistortShortcut()
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
+    if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonRelease) {
+        auto *widget = qobject_cast<QWidget *>(watched);
+        const auto *mouse = static_cast<QMouseEvent *>(event);
+        if (widget && widget->window() == this
+                && (mouse->button() == Qt::BackButton || mouse->button() == Qt::ForwardButton)) {
+            if (event->type() == QEvent::MouseButtonPress) {
+                if (mouse->button() == Qt::BackButton) browseParentFolder();
+                else browseChildFolder();
+            }
+            event->accept();
+            return true;
+        }
+    }
     // A release can reach a different widget, or never arrive after switching apps.
     if ((compareHeldKey || distortHeldKey) && (event->type() == QEvent::ApplicationDeactivate
             || (event->type() == QEvent::WindowDeactivate
@@ -241,7 +289,6 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     }
     auto *widget = qobject_cast<QWidget *>(watched);
     if (!widget || (widget->window() != this && widget->window() != filtersDialog)
-            || !graphicsView->isMediaLoaded()
             || event->type() == QEvent::KeyRelease)
         return false;
     // Also check focus: ignored editor keys can bubble up to their parent window.
@@ -256,9 +303,36 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         return false;
     };
     QWidget *focused = QApplication::focusWidget();
+    const QKeySequence pressed(key->key() | int(key->modifiers()));
     if (isEditor(widget) || (focused && focused->window() == widget->window()
-                            && isEditor(focused)))
+                            && isEditor(focused))) {
+        if (event->type() == QEvent::ShortcutOverride) {
+            for (const QString &name : { QString("browsefolder"), QString("browsechild") }) {
+                const auto *action = qvApp->getActionManager().getAction(name);
+                if (action && action->shortcuts().contains(pressed)) {
+                    event->accept();
+                    return true;
+                }
+            }
+        }
         return false;
+    }
+    if (widget->window() == this) {
+        // Item views normally reserve Up/Down during ShortcutOverride. Route the
+        // configured hierarchy keys before that, while leaving editors and Shift selection alone.
+        for (const QString &name : { QString("browsefolder"), QString("browsechild") }) {
+            const auto *action = qvApp->getActionManager().getAction(name);
+            if (action && action->shortcuts().contains(pressed)) {
+                if (event->type() == QEvent::KeyPress && !key->isAutoRepeat()) {
+                    if (name == "browsefolder") browseParentFolder();
+                    else browseChildFolder();
+                }
+                event->accept();
+                return true;
+            }
+        }
+    }
+    if (!graphicsView->isMediaLoaded()) return false;
     if (graphicsView->isCropActive() && key->modifiers() == Qt::NoModifier
             && (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter || key->key() == Qt::Key_Escape)) {
         if (event->type() == QEvent::KeyPress && !key->isAutoRepeat()) {
@@ -274,7 +348,6 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         event->accept();
         return true;
     }
-    const QKeySequence pressed(key->key() | int(key->modifiers()));
     if (graphicsView->isDistortActive() && (pressed == QKeySequence(Qt::CTRL | Qt::Key_Z)
             || pressed == QKeySequence(Qt::CTRL | Qt::Key_Y))) {
         if (event->type() == QEvent::KeyPress && !key->isAutoRepeat()) {
@@ -372,10 +445,16 @@ void MainWindow::changeEvent(QEvent *event)
 
 void MainWindow::mousePressEvent(QMouseEvent *event)
 {
+    if (contentPages->currentWidget() == galleryView) {
+        if (event->button() == Qt::MouseButton::BackButton) browseParentFolder();
+        else if (event->button() == Qt::MouseButton::ForwardButton) browseChildFolder();
+        QMainWindow::mousePressEvent(event);
+        return;
+    }
     if (event->button() == Qt::MouseButton::BackButton)
-        previousFile();
+        browseParentFolder();
     else if (event->button() == Qt::MouseButton::ForwardButton)
-        nextFile();
+        browseChildFolder();
     else if (event->button() == Qt::MouseButton::MiddleButton)
         resetZoom();
 
@@ -438,7 +517,15 @@ void MainWindow::toggleBackgroundColor()
 {
     // Keep the override local to this window; never change the saved background preference.
     alternateBackgroundEnabled = !alternateBackgroundEnabled;
+    updateGalleryBackground();
     update();
+}
+
+void MainWindow::updateGalleryBackground()
+{
+    QPainter defaults;
+    galleryView->setBackgroundColor(alternateBackgroundEnabled ? alternateBackgroundColor
+            : customBackgroundColor.isValid() ? customBackgroundColor : defaults.background().color());
 }
 
 void MainWindow::fullscreenChanged()
@@ -459,8 +546,123 @@ void MainWindow::fullscreenChanged()
 
 void MainWindow::openFile(const QString &fileName)
 {
+    if (isBrowsingFolder() && QFileInfo(fileName).isFile()
+            && QFileInfo(fileName).absolutePath() == galleryView->folderPath())
+        graphicsView->setFolderOrder(galleryView->folderPath(), galleryView->mediaFiles(), galleryScanOptions());
     graphicsView->loadFile(fileName);
     cancelSlideshow();
+}
+
+QVMediaCatalog::ScanOptions MainWindow::galleryScanOptions() const
+{
+    QVMediaCatalog::ScanOptions options;
+    options.supportedMedia.append({ QVMediaCatalog::MediaType::Image,
+                                    qvApp->getFileExtensionList(), qvApp->getMimeTypeNameList() });
+    options.supportedMedia.append({ QVMediaCatalog::MediaType::Video,
+                                    qvApp->getVideoExtensionList(), qvApp->getVideoMimeTypeNameList() });
+    options.allowMimeContentDetection = qvGetSettingBool(AllowMimeContentDetection);
+    options.includeHidden = !qvApp->getSettingsManager().getBool("skiphidden");
+    options.sortMode = qvGetSettingInt(SortMode);
+    options.sortDescending = qvGetSettingBool(SortDescending);
+    return options;
+}
+
+bool MainWindow::isBrowsingFolder() const
+{
+    return contentPages->currentWidget() == galleryView && !galleryView->isHome();
+}
+
+void MainWindow::showViewer()
+{
+    if (!navigatingHierarchy) folderHistory.clear();
+    contentPages->setCurrentWidget(graphicsView);
+    graphicsView->setFocus();
+}
+
+void MainWindow::showHome()
+{
+    folderHistory.clear();
+    contentPages->setCurrentWidget(galleryView);
+    cancelSlideshow();
+    graphicsView->closeImage();
+    if (layersHud) layersHud->setVisible(false);
+    if (filtersDialog) filtersDialog->hide();
+    refreshHomeRecents();
+    updateWindowTitle();
+    disableActions();
+}
+
+void MainWindow::refreshHomeRecents()
+{
+    QList<QPair<QString, QString>> recents;
+    for (const auto &recent : qvApp->getActionManager().getRecentsList()) {
+        recents.append({ recent.fileName, recent.filePath });
+        if (recents.size() == 4) break;
+    }
+    galleryView->showHome(recents);
+}
+
+void MainWindow::showFolder(const QString &path, const QString &selectedPath)
+{
+    if (!navigatingHierarchy) folderHistory.clear();
+    if (path.isEmpty()) { showHome(); return; }
+    const QString folderPath = QDir(path).absolutePath();
+    contentPages->setCurrentWidget(galleryView);
+    cancelSlideshow();
+    graphicsView->closeImage();
+    if (layersHud) layersHud->setVisible(false);
+    if (filtersDialog) filtersDialog->hide();
+    galleryView->openFolder(folderPath, galleryScanOptions(), selectedPath);
+    qvApp->getActionManager().addFileToRecentsList(QFileInfo(folderPath));
+    justLaunchedWithImage = false;
+    updateWindowTitle();
+    updateWindowFilePath();
+    disableActions();
+}
+
+void MainWindow::browseParentFolder()
+{
+    QString previous;
+    QString parentPath;
+    if (contentPages->currentWidget() == graphicsView) {
+        const QFileInfo file = getCurrentMedia().fileInfo;
+        if (file.filePath().isEmpty()) return;
+        previous = file.absoluteFilePath();
+        parentPath = file.absolutePath();
+    } else if (!galleryView->isHome()) {
+        previous = galleryView->folderPath();
+        QDir parent(previous);
+        if (!parent.cdUp()) return;
+        parentPath = parent.absolutePath();
+    } else return;
+    folderHistory.remember(parentPath, previous);
+    QScopedValueRollback<bool> navigating(navigatingHierarchy, true);
+    showFolder(parentPath, previous);
+}
+
+void MainWindow::browseChildFolder()
+{
+    if (!isBrowsingFolder()) return;
+    const QString path = folderHistory.takeChild(galleryView->folderPath());
+    if (path.isEmpty()) return;
+    if (!QFileInfo::exists(path)) { folderHistory.clear(); disableActions(); return; }
+    QScopedValueRollback<bool> navigating(navigatingHierarchy, true);
+    openFile(path);
+    disableActions();
+}
+
+void MainWindow::pickFolder()
+{
+    auto *dialog = new QFileDialog(this, tr("Open folder"));
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setFileMode(QFileDialog::Directory);
+    dialog->setOption(QFileDialog::ShowDirsOnly);
+    dialog->setDirectory(isBrowsingFolder() ? galleryView->folderPath()
+                        : getCurrentMedia().fileInfo.filePath().isEmpty() ? QDir::homePath()
+                        : getCurrentMedia().fileInfo.absolutePath());
+    dialog->setWindowModality(Qt::WindowModal);
+    connect(dialog, &QFileDialog::fileSelected, this, [this](const QString &path) { showFolder(path); });
+    dialog->open();
 }
 
 void MainWindow::settingsUpdated()
@@ -475,6 +677,7 @@ void MainWindow::settingsUpdated()
             : QColor();
     alternateBackgroundColor =
             QColor(settingsManager.getString(SettingsManager::Setting::AlternateBgColor));
+    updateGalleryBackground();
 
     // menubarenabled
     bool menuBarEnabled = settingsManager.getBool(SettingsManager::Setting::MenuBarEnabled);
@@ -536,8 +739,7 @@ void MainWindow::shortcutsUpdated()
 void MainWindow::openRecent(int i)
 {
     auto recentsList = qvApp->getActionManager().getRecentsList();
-    graphicsView->loadFile(recentsList.value(i).filePath);
-    cancelSlideshow();
+    openFile(recentsList.value(i).filePath);
 }
 
 void MainWindow::fileChanged()
@@ -547,7 +749,8 @@ void MainWindow::fileChanged()
         layersHud->setDistortAvailable(graphicsView->canDistort());
         layersHud->setDistortActive(graphicsView->isDistortActive());
     }
-    populateOpenWithTimer->start();
+    if (getIsMediaLoaded()) populateOpenWithTimer->start();
+    else populateOpenWithTimer->stop();
     disableActions();
 
     if (info->isVisible())
@@ -574,7 +777,13 @@ void MainWindow::disableActions()
                 if (cloneData.last() == "disable") {
                     clone->setEnabled(getImageDetails().isPixmapLoaded);
                 } else if (cloneData.last() == "mediadisable") {
-                    clone->setEnabled(getIsMediaLoaded());
+                    clone->setEnabled(getIsMediaLoaded()
+                                      || (data.first() == "reloadfile" && isBrowsingFolder())
+                                      || (data.first() == "delete" && isBrowsingFolder()
+                                          && galleryView->hasSelection() && !galleryTrashInProgress));
+                } else if (cloneData.last() == "historydisable") {
+                    clone->setEnabled(isBrowsingFolder()
+                                      && !folderHistory.childOf(galleryView->folderPath()).isEmpty());
                 } else if (cloneData.last() == "gifdisable") {
                     clone->setEnabled(getImageDetails().isMovieLoaded);
                 } else if (cloneData.last() == "playbackdisable") {
@@ -586,7 +795,8 @@ void MainWindow::disableActions()
                     clone->setEnabled(!lastDeletedFiles.isEmpty()
                                       && !lastDeletedFiles.top().pathInTrash.isEmpty());
                 } else if (cloneData.last() == "folderdisable") {
-                    clone->setEnabled(!getCurrentMedia().folderFiles.isEmpty());
+                    clone->setEnabled(contentPages->currentWidget() == graphicsView
+                                      && !getCurrentMedia().folderFiles.isEmpty());
                 } else if (cloneData.last() == "windowdisable") {
                     clone->setEnabled(true);
                 }
@@ -602,9 +812,10 @@ void MainWindow::disableActions()
 
 void MainWindow::requestPopulateOpenWithMenu()
 {
-    openWithFutureWatcher.setFuture(QtConcurrent::run([&] {
-        const auto &curFilePath = getCurrentMedia().fileInfo.absoluteFilePath();
-        return OpenWith::getOpenWithItems(curFilePath);
+    const QString path = getCurrentMedia().fileInfo.absoluteFilePath();
+    if (path.isEmpty()) return;
+    openWithFutureWatcher.setFuture(QtConcurrent::run([path] {
+        return OpenWith::getOpenWithItems(path);
     }));
 }
 
@@ -653,6 +864,7 @@ void MainWindow::refreshProperties()
 void MainWindow::updateWindowTitle()
 {
     QString newString = "qMedia";
+    if (isBrowsingFolder()) newString = QDir::toNativeSeparators(galleryView->folderPath()) + " - qMedia";
     if (getCurrentMedia().fileInfo.isFile()) {
         switch (qvApp->getSettingsManager().getInt(SettingsManager::Setting::TitleBarMode)) {
         case 1: {
@@ -919,6 +1131,10 @@ void MainWindow::pickUrl()
 
 void MainWindow::reloadFile()
 {
+    if (isBrowsingFolder()) {
+        galleryView->openFolder(galleryView->folderPath(), galleryScanOptions(), {}, true);
+        return;
+    }
     if (getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video)
         graphicsView->reloadVideo();
     else
@@ -960,8 +1176,84 @@ void MainWindow::showFileInfo()
     info->raise();
 }
 
+void MainWindow::askTrashGallerySelection()
+{
+    const QStringList paths = galleryView->selectedPaths();
+    if (paths.isEmpty() || galleryTrashInProgress) return;
+    if (!qvGetSettingBool(AskDelete)) { trashGalleryPaths(paths); return; }
+#ifdef Q_OS_WIN
+    const QString question = tr("Move %1 selected items to the Recycle Bin?").arg(paths.size());
+#else
+    const QString question = tr("Move %1 selected items to the Trash?").arg(paths.size());
+#endif
+    auto *dialog = new QMessageBox(QMessageBox::Question, tr("Move to Trash"), question,
+                                   QMessageBox::Yes | QMessageBox::No, this);
+    dialog->setObjectName("galleryTrashConfirmation");
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setDefaultButton(QMessageBox::No);
+    QStringList names;
+    bool containsFolder = false;
+    for (const QString &path : paths) {
+        const QFileInfo info(path);
+        containsFolder = containsFolder || info.isDir();
+        if (names.size() < 10) names.append(info.fileName());
+    }
+    if (paths.size() > names.size()) names.append(tr("…and %1 more").arg(paths.size() - names.size()));
+    if (containsFolder) names.append(tr("Selected folders include their contents."));
+    dialog->setInformativeText(names.join('\n'));
+    dialog->setCheckBox(new QCheckBox(tr("Do not ask again")));
+    connect(dialog, &QMessageBox::finished, this, [this, dialog, paths](int result) {
+        if (result != QMessageBox::Yes) return;
+        QSettings().setValue("options/askdelete", !dialog->checkBox()->isChecked());
+        qvApp->getSettingsManager().loadSettings();
+        // The confirmed selection is immutable, even if the displayed folder changes.
+        trashGalleryPaths(paths);
+    });
+    dialog->open();
+}
+
+void MainWindow::trashGalleryPaths(const QStringList &paths)
+{
+    if (paths.isEmpty() || galleryTrashInProgress) return;
+    galleryTrashInProgress = true;
+    const QString origin = QFileInfo(paths.first()).absolutePath();
+    disableActions();
+    using Results = QList<QVFileOperations::TrashResult>;
+    auto *watcher = new QFutureWatcher<Results>(this);
+    connect(watcher, &QFutureWatcher<Results>::finished, this, [this, watcher, origin] {
+        const Results results = watcher->result();
+        watcher->deleteLater();
+        galleryTrashInProgress = false;
+        QStringList errors;
+        int failed = 0;
+        for (const auto &result : results) {
+            if (!result.error.isEmpty()) {
+                ++failed;
+                if (errors.size() < 10)
+                    errors.append(QFileInfo(result.originalPath).fileName() + ": " + result.error);
+            } else if (!result.trashPath.isEmpty()) {
+                lastDeletedFiles.push({ result.trashPath, result.originalPath });
+            }
+        }
+        if (isBrowsingFolder() && galleryView->folderPath() == origin) reloadFile();
+        disableActions();
+        if (failed) {
+            auto *error = new QMessageBox(QMessageBox::Warning, tr("Move to Trash"),
+                    tr("Could not move %1 items to the trash.\n%2").arg(failed).arg(errors.join('\n')),
+                    QMessageBox::Ok, this);
+            error->setAttribute(Qt::WA_DeleteOnClose);
+            error->open();
+        }
+    });
+    watcher->setFuture(QtConcurrent::run([paths] { return QVFileOperations::trash(paths); }));
+}
+
 void MainWindow::askDeleteFile(bool permanent)
 {
+    if (isBrowsingFolder()) {
+        if (!permanent) askTrashGallerySelection();
+        return;
+    }
     if (!permanent && !qvApp->getSettingsManager().getBool(SettingsManager::Setting::AskDelete)) {
         deleteFile(permanent);
         return;
@@ -1012,6 +1304,10 @@ void MainWindow::askDeleteFile(bool permanent)
 
 void MainWindow::deleteFile(bool permanent)
 {
+    if (isBrowsingFolder()) {
+        if (!permanent) trashGalleryPaths(galleryView->selectedPaths());
+        return;
+    }
     const QFileInfo &fileInfo = getCurrentMedia().fileInfo;
     const QString filePath = fileInfo.absoluteFilePath();
     const QString fileName = fileInfo.fileName();
@@ -1109,7 +1405,7 @@ void MainWindow::undoDelete()
         return;
     }
 
-    bool success = QFile::rename(lastDeletedFile.pathInTrash, lastDeletedFile.previousPath);
+    bool success = QDir().rename(lastDeletedFile.pathInTrash, lastDeletedFile.previousPath);
     if (!success) {
         QMessageBox::critical(this, tr("Error"),
                               tr("Failed undoing deletion of %1.").arg(fileInfo.fileName()));
@@ -1125,7 +1421,9 @@ void MainWindow::undoDelete()
     return;
 #endif
 
-    openFile(lastDeletedFile.previousPath);
+    if (isBrowsingFolder()) {
+        if (galleryView->folderPath() == QFileInfo(lastDeletedFile.previousPath).absolutePath()) reloadFile();
+    } else openFile(lastDeletedFile.previousPath);
     disableActions();
 }
 

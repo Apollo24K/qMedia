@@ -16,6 +16,8 @@ class MainWindow;
 }
 class QVLayersHud;
 class QVFiltersDialog;
+class QVGalleryView;
+class QStackedWidget;
 
 class MainWindow : public QMainWindow
 {
@@ -56,6 +58,12 @@ public:
     void openUrl(const QUrl &url, const QImage &fallback = QImage());
 
     void pickUrl();
+    void pickFolder();
+    void showHome();
+    void showFolder(const QString &path, const QString &selectedPath = {});
+    void browseParentFolder();
+    void browseChildFolder();
+    bool isBrowsingFolder() const;
 
     void reloadFile();
 
@@ -177,6 +185,17 @@ private:
 
     Ui::MainWindow *ui;
     QVGraphicsView *graphicsView;
+    QVGalleryView *galleryView;
+    QStackedWidget *contentPages;
+    void showViewer();
+    void refreshHomeRecents();
+    void updateGalleryBackground();
+    QVMediaCatalog::ScanOptions galleryScanOptions() const;
+    QVMediaCatalog::FolderHistory folderHistory;
+    bool navigatingHierarchy = false;
+    bool galleryTrashInProgress = false;
+    void askTrashGallerySelection();
+    void trashGalleryPaths(const QStringList &paths);
 
     QMenu *contextMenu;
     QMenu *virtualMenu;

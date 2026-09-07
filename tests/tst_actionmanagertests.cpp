@@ -36,6 +36,15 @@
 #include <QPainter>
 #include <QGraphicsPixmapItem>
 #include "qvfiltereffect.h"
+#include "qvgalleryview.h"
+#include "qvgallerymodel.h"
+#include <QListView>
+#include <QFileDialog>
+#include <QFileSystemModel>
+#include <QTreeView>
+#include <QDialogButtonBox>
+#include <QMessageBox>
+#include "qvfileoperations.h"
 
 class ActionManagerTests : public QObject
 {
@@ -69,11 +78,522 @@ private slots:
     void testLayersHud();
     void testLayersHudCursor();
     void testDialogToggleShortcuts();
+    void testFolderGallery();
+    void testGalleryAsyncRequests();
+    void testGalleryQuickActions();
+    void testCombinedOpenDialog();
+    void testGalleryLayoutAndSelection();
+    void testGalleryRefreshPosition();
+    void testFolderArrowNavigation();
+    void testFolderShortcutMigration();
+    void testBatchTrash();
 };
 
 ActionManagerTests::ActionManagerTests() { }
 
 ActionManagerTests::~ActionManagerTests() { }
+
+void ActionManagerTests::testFolderGallery()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QVERIFY(QDir(directory.path()).mkdir("empty"));
+    QImage image(80, 60, QImage::Format_ARGB32);
+    image.fill(Qt::blue);
+    const QString path = directory.filePath("photo.png");
+    QVERIFY(image.save(path));
+    MainWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    struct CloseWindow { MainWindow &window; ~CloseWindow() { window.close(); } } cleanup{window};
+    window.show();
+    auto *gallery = window.findChild<QVGalleryView *>();
+    auto *grid = window.findChild<QListView *>("folderGrid");
+    auto *model = window.findChild<QVGalleryModel *>();
+    auto *canvas = window.findChild<QVGraphicsView *>();
+    QVERIFY(gallery && grid && model && canvas);
+    QVERIFY(gallery->isHome());
+    QVERIFY(gallery->isVisible());
+    const QString previewDir = qEnvironmentVariable("QMEDIA_GALLERY_PREVIEW_DIR");
+    if (!previewDir.isEmpty()) {
+        window.resize(800, 600);
+        window.findChild<QPushButton *>("homeOpen")->setFocus(Qt::TabFocusReason);
+        QVERIFY(window.grab().save(previewDir + "/home.png"));
+    }
+    // A pasted folder path must browse, even when it contains supported media.
+    QApplication::clipboard()->setText(QDir::toNativeSeparators(directory.path()));
+    window.paste();
+    QVERIFY(window.isBrowsingFolder());
+    QVERIFY(!window.getIsMediaLoaded());
+    QTRY_COMPARE(model->rowCount(), 2);
+    QVERIFY(!window.getCurrentMedia().isLoadRequested);
+    QCOMPARE(model->index(0).data(QVGalleryModel::DirectoryRole).toBool(), true);
+    if (!previewDir.isEmpty()) {
+        QTRY_VERIFY(!qvariant_cast<QImage>(model->index(1).data(Qt::DecorationRole)).isNull());
+        QVERIFY(window.grab().save(previewDir + "/folder.png"));
+    }
+    for (auto *action : qvApp->getActionManager().getAllClonesOfAction("nextfile", &window))
+        QVERIFY(!action->isEnabled());
+    grid->setCurrentIndex(model->index(1));
+    grid->setFocus();
+    QTest::keyClick(grid, Qt::Key_Return);
+    QTRY_VERIFY(window.getIsMediaLoaded());
+    QVERIFY(!gallery->isVisible());
+    QVERIFY(canvas->isVisible());
+    QCOMPARE(window.getCurrentMedia().fileInfo.absoluteFilePath(), path);
+    const QSize mediaSize = window.size();
+    window.browseParentFolder();
+    QTRY_COMPARE(model->rowCount(), 2);
+    QTRY_COMPARE(grid->currentIndex().data(QVGalleryModel::PathRole).toString(), path);
+    QCOMPARE(window.size(), mediaSize);
+    QVERIFY(!window.getIsMediaLoaded());
+    window.openFile(directory.filePath("empty"));
+    QVERIFY(window.isBrowsingFolder());
+    QTRY_COMPARE(model->rowCount(), 0);
+    window.browseParentFolder();
+    QTRY_COMPARE(model->rowCount(), 2);
+    QCOMPARE(grid->currentIndex().data(QVGalleryModel::PathRole).toString(), directory.filePath("empty"));
+    // A drop routed through the existing canvas takes the same folder path.
+    QMimeData drop;
+    drop.setUrls({ QUrl::fromLocalFile(directory.path()) });
+    canvas->loadMimeData(&drop);
+    QVERIFY(window.isBrowsingFolder());
+    // Completion of a pending image load must not resurrect media on Home.
+    window.openFile(path);
+    window.showHome();
+    QThreadPool::globalInstance()->waitForDone();
+    QCoreApplication::processEvents();
+    QVERIFY(gallery->isHome());
+    QVERIFY(!window.getIsMediaLoaded());
+    QVERIFY(!window.getCurrentMedia().isLoadRequested);
+    window.openFile(path);
+    QTRY_VERIFY(window.getIsMediaLoaded());
+}
+
+void ActionManagerTests::testGalleryQuickActions()
+{
+    const QVariant previousColor = QSettings().value("options/bgcolor");
+    QSettings().setValue("options/bgcolor", "#183040");
+    qvApp->getSettingsManager().loadSettings();
+    struct RestoreColor {
+        QVariant previous;
+        ~RestoreColor() {
+            if (previous.isValid()) QSettings().setValue("options/bgcolor", previous);
+            else QSettings().remove("options/bgcolor");
+            qvApp->getSettingsManager().loadSettings();
+        }
+    } restore{previousColor};
+    QTemporaryDir directory;
+    QImage image(80, 60, QImage::Format_ARGB32);
+    image.fill(Qt::blue);
+    const QString path = directory.filePath("photo.png");
+    QVERIFY(image.save(path));
+    MainWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    struct CloseWindow { MainWindow &window; ~CloseWindow() { window.close(); } } cleanup{window};
+    window.show();
+    auto *gallery = window.findChild<QVGalleryView *>();
+    auto *grid = window.findChild<QListView *>("folderGrid");
+    auto *canvas = window.findChild<QVGraphicsView *>();
+    QCOMPARE(gallery->palette().color(QPalette::Base), QColor("#183040"));
+    QCOMPARE(grid->viewport()->palette().color(QPalette::Base), QColor("#183040"));
+    window.toggleBackgroundColor();
+    QCOMPARE(gallery->palette().color(QPalette::Base), QColor(qvGetSettingString(AlternateBgColor)));
+    window.toggleBackgroundColor();
+    QCOMPARE(gallery->palette().color(QPalette::Base), QColor("#183040"));
+    // Check propagation from a blank child on Home, not just the window itself.
+    QTRY_VERIFY(window.isActiveWindow());
+    const QPoint blank = gallery->rect().bottomRight() - QPoint(30, 30);
+    QWidget *surface = gallery->childAt(blank);
+    QVERIFY(surface);
+    QTest::mouseDClick(surface, Qt::LeftButton, Qt::NoModifier, surface->mapFrom(gallery, blank));
+    QVERIFY(window.isFullScreen());
+    QTest::keyClick(&window, Qt::Key_Escape);
+    QVERIFY(!window.isFullScreen());
+    QVERIFY(gallery->isHome());
+    window.showFolder(directory.path());
+    QTRY_COMPARE(grid->model()->rowCount(), 1);
+    const auto doubleClickBlankGrid = [&] {
+        const QPoint point(1, 1); // A card gutter stays empty even in a tiny media-sized window.
+        QVERIFY(!grid->indexAt(point).isValid());
+        QTest::mouseDClick(grid->viewport(), Qt::LeftButton, Qt::NoModifier, point);
+    };
+    doubleClickBlankGrid();
+    QVERIFY(window.isFullScreen());
+    doubleClickBlankGrid();
+    QVERIFY(!window.isFullScreen());
+    QVERIFY(window.isBrowsingFolder());
+    window.openFile(path);
+    QTRY_VERIFY(window.getIsMediaLoaded());
+    QVERIFY(!window.findChild<QToolButton *>("viewerFolderButton"));
+    QTest::keyClick(canvas, Qt::Key_Escape);
+    QVERIFY(canvas->isVisible());
+    QVERIFY(!window.isBrowsingFolder());
+    QCOMPARE(window.getCurrentMedia().fileInfo.absoluteFilePath(), path);
+    window.showFullScreen();
+    QTest::keyClick(canvas, Qt::Key_Escape);
+    QVERIFY(!window.isFullScreen());
+    QVERIFY(canvas->isVisible());
+    QCOMPARE(window.getCurrentMedia().fileInfo.absoluteFilePath(), path);
+}
+
+void ActionManagerTests::testCombinedOpenDialog()
+{
+    QTemporaryDir directory;
+    QVERIFY(QDir(directory.path()).mkdir("album"));
+    QImage image(80, 60, QImage::Format_ARGB32);
+    image.fill(Qt::blue);
+    const QString path = directory.filePath("photo.png");
+    QVERIFY(image.save(path));
+    MainWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    struct CloseWindow { MainWindow &window; ~CloseWindow() { window.close(); } } cleanup{window};
+    window.show();
+    auto *open = window.findChild<QPushButton *>("homeOpen");
+    QVERIFY(open);
+    for (const QString &selected : { directory.filePath("album"), path }) {
+        open->click();
+        auto *dialog = window.findChild<QFileDialog *>();
+        QVERIFY(dialog);
+        dialog->setViewMode(QFileDialog::Detail);
+        dialog->setDirectory(directory.path());
+        auto *tree = dialog->findChild<QTreeView *>("treeView");
+        QVERIFY(tree);
+        auto *files = qobject_cast<QFileSystemModel *>(tree->model());
+        QVERIFY(files);
+        QTRY_VERIFY(tree->model()->rowCount(tree->rootIndex()) >= 2);
+        const QModelIndex index = files->index(selected);
+        QVERIFY(index.isValid());
+        tree->setCurrentIndex(index);
+        tree->selectionModel()->select(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        QTRY_COMPARE(dialog->selectedFiles(), QStringList{selected});
+        auto *buttons = dialog->findChild<QDialogButtonBox *>();
+        QVERIFY(buttons && buttons->button(QDialogButtonBox::Open));
+        QVERIFY(buttons->button(QDialogButtonBox::Open)->isEnabled());
+        QSignalSpy accepted(dialog, &QFileDialog::filesSelected);
+        buttons->button(QDialogButtonBox::Open)->click();
+        QCOMPARE(accepted.count(), 1);
+        if (QFileInfo(selected).isDir()) {
+            QVERIFY(window.isBrowsingFolder());
+            QCOMPARE(window.findChild<QVGalleryView *>()->folderPath(), selected);
+        } else {
+            QTRY_VERIFY(window.getIsMediaLoaded());
+            QCOMPARE(window.getCurrentMedia().fileInfo.absoluteFilePath(), selected);
+        }
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        window.showHome();
+    }
+}
+
+void ActionManagerTests::testGalleryLayoutAndSelection()
+{
+    QTemporaryDir directory;
+    QImage image(80, 60, QImage::Format_ARGB32);
+    image.fill(Qt::green);
+    for (int i = 0; i < 18; ++i) QVERIFY(image.save(directory.filePath(QString("photo%1.png").arg(i))));
+    MainWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    struct CloseWindow { MainWindow &window; ~CloseWindow() { window.close(); } } cleanup{window};
+    window.show();
+    window.showFolder(directory.path());
+    auto *gallery = window.findChild<QVGalleryView *>();
+    auto *grid = window.findChild<QListView *>("folderGrid");
+    QTRY_COMPARE(grid->model()->rowCount(), 18);
+    const auto fillsWidth = [&] {
+        const int width = grid->viewport()->width();
+        const int columns = qMax(1, width / 176);
+        const QRect first = grid->visualRect(grid->model()->index(0, 0));
+        const QRect last = grid->visualRect(grid->model()->index(columns - 1, 0));
+        const int rounding = width - 2 - last.right();
+        return first.left() == 0 && last.top() == first.top() && rounding >= 0 && rounding < columns;
+    };
+    const auto layoutDetails = [&] {
+        QString details;
+        QDebug log(&details);
+        log << "viewport" << grid->viewport()->size() << "rectangles";
+        for (int i = 0; i < 8; ++i) log << grid->visualRect(grid->model()->index(i, 0));
+        const QString previewDir = qEnvironmentVariable("QMEDIA_GALLERY_PREVIEW_DIR");
+        if (!previewDir.isEmpty()) window.grab().save(previewDir + "/adaptive-folder.png");
+        return details;
+    };
+    for (int width : {640, 777, 1001, 1459}) {
+        window.resize(width, 580);
+        QTRY_VERIFY2(fillsWidth(), qPrintable(layoutDetails()));
+        if (width == 640) {
+            QVERIFY(!grid->verticalScrollBar()->isVisible());
+            QTRY_VERIFY(grid->verticalScrollBar()->maximum() > 0);
+            const QPoint point = grid->viewport()->rect().center();
+            QWheelEvent wheel(point, grid->viewport()->mapToGlobal(point), QPoint(), QPoint(0, -120),
+                              Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(grid->viewport(), &wheel);
+            QVERIFY(grid->verticalScrollBar()->value() > 0);
+            grid->verticalScrollBar()->setValue(0);
+        }
+    }
+    window.showFullScreen();
+    QTRY_VERIFY(fillsWidth());
+    window.showNormal();
+    QTRY_VERIFY(fillsWidth());
+    grid->verticalScrollBar()->setValue(0);
+    QTRY_VERIFY(window.isActiveWindow());
+    const QPoint first = grid->visualRect(grid->model()->index(0, 0)).center();
+    const QPoint second = grid->visualRect(grid->model()->index(1, 0)).center();
+    QTest::mouseClick(grid->viewport(), Qt::LeftButton, Qt::NoModifier, first);
+    QCOMPARE(gallery->selectedPaths().size(), 1);
+    QVERIFY(window.isBrowsingFolder());
+    QTest::mouseClick(grid->viewport(), Qt::LeftButton, Qt::ControlModifier, second);
+    QCOMPARE(gallery->selectedPaths().size(), 2);
+    auto *countOverlay = window.findChild<QLabel *>("gallerySelectionCount");
+    QVERIFY(countOverlay && countOverlay->isVisible());
+    QCOMPARE(countOverlay->text(), QString("2 selected"));
+    QTest::keyClick(grid, Qt::Key_Escape);
+    QVERIFY(!gallery->hasSelection());
+    QVERIFY(!countOverlay->isVisible());
+    QVERIFY(!grid->verticalScrollBar()->isVisible());
+    QTest::mouseClick(grid->viewport(), Qt::LeftButton, Qt::NoModifier, first);
+    const QPoint empty(1, 1); // The gutter is also empty space, not part of a tile.
+    QVERIFY(!grid->indexAt(empty).isValid());
+    QTest::mouseClick(grid->viewport(), Qt::LeftButton, Qt::NoModifier, empty);
+    QVERIFY(!gallery->hasSelection());
+    QTest::mousePress(grid->viewport(), Qt::LeftButton, Qt::NoModifier, empty);
+    const QPoint end(second.x(), second.y());
+    QMouseEvent move(QEvent::MouseMove, end, grid->viewport()->mapToGlobal(end),
+                     Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(grid->viewport(), &move);
+    QTest::mouseRelease(grid->viewport(), Qt::LeftButton, Qt::NoModifier, end);
+    QCOMPARE(gallery->selectedPaths().size(), 2);
+    // Delete works on the selection, with cancellation leaving every item intact.
+    const QString previewDir = qEnvironmentVariable("QMEDIA_GALLERY_PREVIEW_DIR");
+    if (!previewDir.isEmpty()) QVERIFY(window.grab().save(previewDir + "/adaptive-folder.png"));
+    QTest::keyClick(grid, Qt::Key_Delete);
+    auto *confirmation = window.findChild<QMessageBox *>("galleryTrashConfirmation");
+    QVERIFY(confirmation);
+    QVERIFY(confirmation->text().contains("2"));
+    confirmation->button(QMessageBox::No)->click();
+    QCOMPARE(QDir(directory.path()).entryList(QDir::Files).size(), 18);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    // QTest's double-click helper sends only the second press of the sequence.
+    QTest::mouseClick(grid->viewport(), Qt::LeftButton, Qt::NoModifier, first);
+    QTest::mouseDClick(grid->viewport(), Qt::LeftButton, Qt::NoModifier, first);
+    QTRY_VERIFY(window.getIsMediaLoaded());
+}
+
+void ActionManagerTests::testGalleryRefreshPosition()
+{
+    QTemporaryDir directory;
+    QImage image(24, 24, QImage::Format_ARGB32);
+    image.fill(Qt::blue);
+    for (int i = 0; i < 320; ++i)
+        QVERIFY(image.save(directory.filePath(QString("photo%1.png").arg(i))));
+    MainWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    struct CloseWindow { MainWindow &window; ~CloseWindow() { window.close(); } } cleanup{window};
+    window.show();
+    window.resize(640, 480);
+    window.showFolder(directory.path());
+    auto *grid = window.findChild<QListView *>("folderGrid");
+    auto *gallery = window.findChild<QVGalleryView *>();
+    QTRY_COMPARE(grid->model()->rowCount(), 320);
+    QTRY_VERIFY(grid->visualRect(grid->model()->index(0, 0)).top() >= 60);
+    grid->setCurrentIndex(grid->model()->index(0, 0));
+    grid->setFocus();
+    QTest::keyClick(grid, Qt::Key_Down);
+    QVERIFY(grid->currentIndex().row() > 0);
+    QVERIFY(window.isBrowsingFolder());
+    QTest::keyClick(grid, Qt::Key_Up);
+    QCOMPARE(grid->currentIndex().row(), 0);
+    QTRY_VERIFY(grid->verticalScrollBar()->maximum() > 8000);
+    grid->verticalScrollBar()->setValue(8000);
+    const int position = grid->verticalScrollBar()->value();
+    // Simulate a successful deletion, then use the same reload path as batch trash.
+    QVERIFY(QFile::remove(directory.filePath("photo175.png")));
+    window.reloadFile();
+    QTRY_COMPARE(grid->model()->rowCount(), 319);
+    QTRY_COMPARE(grid->verticalScrollBar()->value(), position);
+    QTRY_VERIFY(grid->visualRect(grid->model()->index(318, 0)).isValid());
+    QCOMPARE(grid->verticalScrollBar()->value(), position);
+    QVERIFY(!gallery->hasSelection());
+    grid->verticalScrollBar()->setValue(grid->verticalScrollBar()->maximum());
+    for (int i = 310; i < 320; ++i)
+        QVERIFY(QFile::remove(directory.filePath(QString("photo%1.png").arg(i))));
+    window.reloadFile();
+    QTRY_COMPARE(grid->model()->rowCount(), 309);
+    QTRY_VERIFY(grid->visualRect(grid->model()->index(308, 0)).isValid());
+    QTRY_COMPARE(grid->verticalScrollBar()->value(), grid->verticalScrollBar()->maximum());
+    grid->verticalScrollBar()->setValue(grid->verticalScrollBar()->minimum());
+    QVERIFY(grid->visualRect(grid->model()->index(0, 0)).top() >= 60);
+    const auto ordered = gallery->mediaFiles();
+    window.openFile(ordered.first().absoluteFilePath);
+    QTRY_VERIFY(window.getIsMediaLoaded());
+    auto *core = window.findChild<QVImageCore *>();
+    QVERIFY(core);
+    for (int i = 1; i < 5; ++i) {
+        QTRY_VERIFY(!core->isLoadInProgress());
+        window.nextFile();
+        QTRY_COMPARE(window.getCurrentMedia().fileInfo.absoluteFilePath(), ordered[i].absoluteFilePath);
+        QTRY_VERIFY(!core->isLoadInProgress());
+        QTRY_VERIFY(window.getIsMediaLoaded());
+    }
+    for (int i = 3; i >= 0; --i) {
+        window.previousFile();
+        QTRY_COMPARE(window.getCurrentMedia().fileInfo.absoluteFilePath(), ordered[i].absoluteFilePath);
+        QTRY_VERIFY(!core->isLoadInProgress());
+    }
+}
+
+void ActionManagerTests::testFolderArrowNavigation()
+{
+    QTemporaryDir directory;
+    QVERIFY(QDir(directory.path()).mkpath("album/set"));
+    QImage image(80, 60, QImage::Format_ARGB32);
+    image.fill(Qt::blue);
+    const QString path = directory.filePath("album/set/photo.png");
+    QVERIFY(image.save(path));
+    MainWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    struct CloseWindow { MainWindow &window; ~CloseWindow() { window.close(); } } cleanup{window};
+    window.show();
+    window.openFile(path);
+    QTRY_VERIFY(window.getIsMediaLoaded());
+    auto *gallery = window.findChild<QVGalleryView *>();
+    auto *grid = window.findChild<QListView *>("folderGrid");
+    auto *canvas = window.findChild<QVGraphicsView *>();
+    {
+        QLineEdit editor(&window);
+        editor.show();
+        editor.setFocus();
+        QTest::keyClick(&editor, Qt::Key_Down);
+        QCOMPARE(window.getCurrentMedia().fileInfo.absoluteFilePath(), path);
+        QVERIFY(!window.isBrowsingFolder());
+    }
+    window.resize(321, 237);
+    const QSize mediaWindowSize = window.size();
+    canvas->setFocus();
+    QTest::mouseClick(canvas->viewport(), Qt::BackButton);
+    QVERIFY(window.isBrowsingFolder());
+    QCOMPARE(window.size(), mediaWindowSize);
+    QCOMPARE(gallery->folderPath(), directory.filePath("album/set"));
+    QTRY_COMPARE(grid->model()->rowCount(), 1);
+    QCOMPARE(window.size(), mediaWindowSize);
+    QTest::mouseClick(grid->viewport(), Qt::BackButton);
+    QCOMPARE(gallery->folderPath(), directory.filePath("album"));
+    QTRY_COMPARE(grid->model()->rowCount(), 1);
+    QTest::mouseClick(grid->viewport(), Qt::ForwardButton);
+    QCOMPARE(gallery->folderPath(), directory.filePath("album/set"));
+    QTRY_COMPARE(grid->model()->rowCount(), 1);
+    QTest::mouseClick(grid->viewport(), Qt::ForwardButton);
+    QTRY_VERIFY(window.getIsMediaLoaded());
+    QCOMPARE(window.getCurrentMedia().fileInfo.absoluteFilePath(), path);
+    // Explicit navigation starts a new branch instead of reopening an unrelated file.
+    window.showFolder(directory.path());
+    QTRY_COMPARE(grid->model()->rowCount(), 1);
+    QTest::mouseClick(grid->viewport(), Qt::ForwardButton);
+    QCOMPARE(gallery->folderPath(), directory.path());
+    QVERIFY(image.save(directory.filePath("new.png")));
+    QTest::keyClick(grid, Qt::Key_R, Qt::ControlModifier);
+    QTRY_COMPARE(grid->model()->rowCount(), 2);
+    const QSize gallerySize = window.size();
+    QTest::keyClick(grid, Qt::Key_H, Qt::ControlModifier);
+    QVERIFY(gallery->isHome());
+    QCOMPARE(window.size(), gallerySize);
+}
+
+void ActionManagerTests::testFolderShortcutMigration()
+{
+    const QStringList keys{"rotateright", "rotateleft", "browsefolder", "browsechild", "home", "reloadfile", "rename", "folderNavigationDefaultsMigrated", "minimalGalleryDefaultsMigrated", "gallerySelectionArrowsMigrated"};
+    QMap<QString, QVariant> before;
+    for (const QString &key : keys) before.insert("shortcuts/" + key, QSettings().value("shortcuts/" + key));
+    struct Restore {
+        QMap<QString, QVariant> values;
+        ~Restore() {
+            for (auto i = values.begin(); i != values.end(); ++i) {
+                if (i.value().isValid()) QSettings().setValue(i.key(), i.value());
+                else QSettings().remove(i.key());
+            }
+            qvApp->getShortcutManager().updateShortcuts();
+        }
+    } restore{before};
+    QSettings().setValue("shortcuts/rotateright", QStringList{QKeySequence(Qt::Key_Up).toString()});
+    QSettings().setValue("shortcuts/rotateleft", QStringList{QKeySequence(Qt::Key_Down).toString()});
+    QSettings().remove("shortcuts/folderNavigationDefaultsMigrated");
+    QSettings().remove("shortcuts/minimalGalleryDefaultsMigrated");
+    QSettings().remove("shortcuts/gallerySelectionArrowsMigrated");
+    qvApp->getShortcutManager().updateShortcuts();
+    QCOMPARE(qvApp->getActionManager().getAction("rotateright")->shortcut(), QKeySequence(Qt::Key_T));
+    QCOMPARE(qvApp->getActionManager().getAction("rotateleft")->shortcut(), QKeySequence(Qt::Key_R));
+    QCOMPARE(qvApp->getActionManager().getAction("browsefolder")->shortcut(), QKeySequence(Qt::ALT | Qt::Key_Up));
+    QCOMPARE(qvApp->getActionManager().getAction("browsechild")->shortcut(), QKeySequence(Qt::ALT | Qt::Key_Down));
+    QSettings().setValue("shortcuts/rotateright", QStringList{QKeySequence(Qt::ALT | Qt::Key_X).toString()});
+    QSettings().remove("shortcuts/folderNavigationDefaultsMigrated");
+    QSettings().remove("shortcuts/minimalGalleryDefaultsMigrated");
+    QSettings().remove("shortcuts/gallerySelectionArrowsMigrated");
+    qvApp->getShortcutManager().updateShortcuts();
+    QCOMPARE(qvApp->getActionManager().getAction("rotateright")->shortcut(), QKeySequence(Qt::ALT | Qt::Key_X));
+}
+
+void ActionManagerTests::testBatchTrash()
+{
+    QTemporaryDir directory;
+    const QString file = directory.filePath("photo.png");
+    const QString folder = directory.filePath("album");
+    const QString missing = directory.filePath("missing.png");
+    QVERIFY(QDir(directory.path()).mkdir("album"));
+    QVERIFY(QDir(directory.path()).mkdir("test-trash"));
+    QFile fixture(file);
+    QVERIFY(fixture.open(QIODevice::WriteOnly));
+    fixture.write("fixture");
+    fixture.close();
+    int operations = 0;
+    const auto results = QVFileOperations::trash({file, folder, file, missing},
+            [&](const QString &source, QString *destination, QString *error) {
+        ++operations;
+        *destination = directory.filePath("test-trash/" + QFileInfo(source).fileName());
+        if (QDir().rename(source, *destination)) return true;
+        *error = "Unable to move item";
+        return false;
+    });
+    QCOMPARE(operations, 3);
+    QCOMPARE(results.size(), 3);
+    QVERIFY(results[0].error.isEmpty());
+    QVERIFY(results[1].error.isEmpty());
+    QVERIFY(QFileInfo::exists(results[0].trashPath));
+    QVERIFY(QFileInfo(results[1].trashPath).isDir());
+    QVERIFY(!results[2].error.isEmpty());
+    QVERIFY(results[2].trashPath.isEmpty());
+}
+
+void ActionManagerTests::testGalleryAsyncRequests()
+{
+    QTemporaryDir first;
+    QTemporaryDir second;
+    QImage image(80, 50, QImage::Format_ARGB32);
+    image.fill(Qt::red);
+    QVERIFY(image.save(first.filePath("first.png")));
+    QVERIFY(image.save(second.filePath("second.png")));
+    QVMediaCatalog::ScanOptions options;
+    options.supportedMedia.append({ QVMediaCatalog::MediaType::Image, { ".png" }, {} });
+    QVGalleryModel model;
+    QSignalSpy loaded(&model, &QVGalleryModel::folderLoaded);
+    model.openFolder(first.path(), options);
+    model.openFolder(second.path(), options);
+    QTRY_COMPARE(loaded.count(), 1);
+    QCOMPARE(model.rowCount(), 1);
+    QCOMPARE(model.index(0).data().toString(), QString("second.png"));
+    // The first request returns a placeholder; a worker produces the preview.
+    QVERIFY(model.index(0).data(Qt::DecorationRole).isNull());
+    QTRY_VERIFY(!qvariant_cast<QImage>(model.index(0).data(Qt::DecorationRole)).isNull());
+    const QImage thumbnail = qvariant_cast<QImage>(model.index(0).data(Qt::DecorationRole));
+    QVERIFY(thumbnail.width() <= 320 && thumbnail.height() <= 224);
+    QCOMPARE(thumbnail.pixelColor(0, 0), QColor(Qt::red));
+    model.openFolder(first.path(), options);
+    model.clear();
+    QThreadPool::globalInstance()->waitForDone();
+    QCoreApplication::processEvents();
+    QCOMPARE(model.rowCount(), 0);
+    QCOMPARE(loaded.count(), 1);
+    model.openFolder(first.filePath("missing"), options);
+    QTRY_COMPARE(loaded.count(), 2);
+    QVERIFY(!loaded.last().first().toString().isEmpty());
+}
 
 void ActionManagerTests::testFilterControlsWheelStep()
 {

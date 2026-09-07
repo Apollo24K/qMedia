@@ -17,7 +17,25 @@ private slots:
     void sortsUsingRequestedMode();
     void tracksCurrentFileIndex();
     void discoversNormalizedVideoFormats();
+    void galleryIncludesFoldersWithoutRecursing();
+    void remembersFolderDescent();
+    void preservesSortedNeighborsOnRescan();
 };
+
+void MediaCatalogTests::remembersFolderDescent()
+{
+    QVMediaCatalog::FolderHistory history;
+    history.remember("/albums/set", "/albums/set/photo.png");
+    history.remember("/albums", "/albums/set");
+    QCOMPARE(history.childOf("/albums"), QString("/albums/set"));
+    QVERIFY(history.takeChild("/elsewhere").isEmpty());
+    QCOMPARE(history.takeChild("/albums"), QString("/albums/set"));
+    QCOMPARE(history.takeChild("/albums/set"), QString("/albums/set/photo.png"));
+    QVERIFY(history.takeChild("/albums/set").isEmpty());
+    history.remember("/albums", "/albums/set");
+    history.clear();
+    QVERIFY(history.childOf("/albums").isEmpty());
+}
 
 static QString createFile(const QString &directory, const QString &name, const QByteArray &data = {})
 {
@@ -40,6 +58,73 @@ static QVMediaCatalog::ScanOptions mixedMediaOptions()
     options.supportedMedia.append(
             { QVMediaCatalog::MediaType::Video, { ".mp4" }, { "video/mp4" } });
     return options;
+}
+
+void MediaCatalogTests::preservesSortedNeighborsOnRescan()
+{
+    QTemporaryDir directory;
+    QVERIFY(!createFile(directory.path(), "photo10.png", "a").isEmpty());
+    QVERIFY(!createFile(directory.path(), "photo2.png", "bbb").isEmpty());
+    QVERIFY(!createFile(directory.path(), "photo1.png", "cc").isEmpty());
+    QVERIFY(!createFile(directory.path(), "clip.mp4", "cc").isEmpty());
+    for (int mode = 0; mode < 5; ++mode) {
+        for (bool descending : {false, true}) {
+            auto options = mixedMediaOptions();
+            options.sortMode = mode;
+            options.sortDescending = descending;
+            QStringList expected;
+            for (const auto &entry : QVMediaCatalog::scanGallery(directory.path(), options))
+                if (!entry.isDirectory) expected.append(entry.file.absoluteFilePath);
+            QVMediaCatalog catalog;
+            for (const auto &path : expected) {
+                catalog.setCurrentFile(QFileInfo(path));
+                catalog.updateFolder(directory.path(), options);
+                QStringList actual;
+                for (const auto &file : catalog.state().folderFiles) actual.append(file.absoluteFilePath);
+                QCOMPARE(actual, expected);
+                QCOMPARE(catalog.state().currentIndexInFolder, expected.indexOf(path));
+            }
+        }
+    }
+    auto options = mixedMediaOptions();
+    options.sortMode = 5;
+    QList<QVMediaCatalog::MediaFile> shuffled;
+    for (const auto &entry : QVMediaCatalog::scanGallery(directory.path(), options)) shuffled.append(entry.file);
+    QVMediaCatalog catalog;
+    catalog.setFolderOrder(directory.path(), shuffled, options);
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        catalog.updateFolder(directory.path(), options);
+        for (int i = 0; i < shuffled.size(); ++i)
+            QCOMPARE(catalog.state().folderFiles[i].absoluteFilePath, shuffled[i].absoluteFilePath);
+    }
+}
+
+void MediaCatalogTests::galleryIncludesFoldersWithoutRecursing()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QVERIFY(QDir(directory.path()).mkdir("Album10"));
+    QVERIFY(QDir(directory.path()).mkdir("Album2"));
+    QVERIFY(!createFile(directory.filePath("Album2"), "nested.jpg").isEmpty());
+    QVERIFY(!createFile(directory.path(), "photo2.png").isEmpty());
+    QVERIFY(!createFile(directory.path(), "photo10.png").isEmpty());
+    QVERIFY(!createFile(directory.path(), "clip.mp4").isEmpty());
+    QVERIFY(!createFile(directory.path(), "notes.txt").isEmpty());
+    auto options = mixedMediaOptions();
+    const auto entries = QVMediaCatalog::scanGallery(directory.path(), options);
+    QCOMPARE(entries.size(), 5);
+    QVERIFY(entries[0].isDirectory);
+    QVERIFY(entries[1].isDirectory);
+    QCOMPARE(entries[0].file.fileName, QString("Album2"));
+    QCOMPARE(entries[1].file.fileName, QString("Album10"));
+    QVERIFY(!entries[2].isDirectory);
+    QCOMPARE(entries[2].file.mediaType, QVMediaCatalog::MediaType::Video);
+    QCOMPARE(entries[3].file.fileName, QString("photo2.png"));
+    QCOMPARE(entries[4].file.fileName, QString("photo10.png"));
+    options.sortDescending = true;
+    const auto reversed = QVMediaCatalog::scanGallery(directory.path(), options);
+    QCOMPARE(reversed[0].file.fileName, QString("Album10"));
+    QCOMPARE(reversed[2].file.fileName, QString("photo10.png"));
 }
 
 void MediaCatalogTests::scansAndClassifiesSupportedMedia()

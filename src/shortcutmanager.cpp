@@ -16,6 +16,51 @@ void ShortcutManager::updateShortcuts()
     QSettings settings;
     settings.beginGroup("shortcuts");
 
+    if (!settings.value("folderNavigationDefaultsMigrated", false).toBool()) {
+        const auto migrate = [&](const QString &name, const QStringList &before, const QStringList &after) {
+            if (settings.contains(name) && settings.value(name).toStringList() == before)
+                settings.setValue(name, after);
+        };
+        migrate("rotateright", {QKeySequence(Qt::Key_Up).toString()}, {QKeySequence(Qt::Key_R).toString()});
+        migrate("rotateleft", {QKeySequence(Qt::Key_Down).toString()}, {QKeySequence(Qt::Key_T).toString()});
+        migrate("browsefolder", {QKeySequence(Qt::ALT | Qt::Key_Up).toString()},
+                {QKeySequence(Qt::Key_Up).toString(), QKeySequence(Qt::ALT | Qt::Key_Up).toString()});
+        settings.setValue("folderNavigationDefaultsMigrated", true);
+    }
+
+    if (!settings.value("minimalGalleryDefaultsMigrated", false).toBool()) {
+        const auto migrate = [&](const QString &name, const QStringList &before, const QStringList &after) {
+            if (settings.contains(name) && settings.value(name).toStringList() == before)
+                settings.setValue(name, after);
+        };
+        migrate("rotateright", {QKeySequence(Qt::Key_R).toString()}, {QKeySequence(Qt::Key_T).toString()});
+        migrate("rotateleft", {QKeySequence(Qt::Key_T).toString()}, {QKeySequence(Qt::Key_R).toString()});
+        migrate("browsefolder", {QKeySequence(Qt::Key_Up).toString(), QKeySequence(Qt::ALT | Qt::Key_Up).toString()},
+                {QKeySequence(Qt::Key_Down).toString(), QKeySequence(Qt::ALT | Qt::Key_Down).toString()});
+        migrate("browsechild", {QKeySequence(Qt::Key_Down).toString(), QKeySequence(Qt::ALT | Qt::Key_Down).toString()},
+                {QKeySequence(Qt::Key_Up).toString(), QKeySequence(Qt::ALT | Qt::Key_Up).toString()});
+        migrate("home", {QKeySequence(Qt::ALT | Qt::Key_Home).toString()},
+                {QKeySequence(Qt::CTRL | Qt::Key_H).toString(), QKeySequence(Qt::ALT | Qt::Key_Home).toString()});
+        migrate("reloadfile", keyBindingsToStringList(QKeySequence::Refresh),
+                keyBindingsToStringList(QKeySequence::Refresh) + QStringList{QKeySequence(Qt::CTRL | Qt::Key_R).toString()});
+        migrate("rename", {QKeySequence(Qt::CTRL | Qt::Key_Return).toString(),
+                           QKeySequence(Qt::Key_F2).toString(), QKeySequence(Qt::CTRL | Qt::Key_R).toString()},
+                          {QKeySequence(Qt::CTRL | Qt::Key_Return).toString(), QKeySequence(Qt::Key_F2).toString()});
+        settings.setValue("minimalGalleryDefaultsMigrated", true);
+    }
+
+    if (!settings.value("gallerySelectionArrowsMigrated", false).toBool()) {
+        const auto migrate = [&](const QString &name, const QStringList &before, const QStringList &after) {
+            if (settings.contains(name) && settings.value(name).toStringList() == before)
+                settings.setValue(name, after);
+        };
+        migrate("browsefolder", {QKeySequence(Qt::Key_Down).toString(), QKeySequence(Qt::ALT | Qt::Key_Down).toString()},
+                {QKeySequence(Qt::ALT | Qt::Key_Up).toString()});
+        migrate("browsechild", {QKeySequence(Qt::Key_Up).toString(), QKeySequence(Qt::ALT | Qt::Key_Up).toString()},
+                {QKeySequence(Qt::ALT | Qt::Key_Down).toString()});
+        settings.setValue("gallerySelectionArrowsMigrated", true);
+    }
+
     // Older settings dialogs saved every shortcut, including unchanged defaults.
     // Free P from that persisted Pause binding when Filters is introduced. Once
     // Filters has itself been saved, subsequent user customizations are preserved.
@@ -40,6 +85,7 @@ void ShortcutManager::updateShortcuts()
     for (auto &shortcut : shortcutsList) {
         shortcut.shortcuts =
                 settings.value(shortcut.name, shortcut.defaultShortcuts).toStringList();
+        shortcut.shortcuts.removeDuplicates();
     }
 
     // Set all action shortcuts now that the shortcuts have changed
@@ -61,13 +107,21 @@ void ShortcutManager::updateShortcuts()
 void ShortcutManager::initializeShortcutsList()
 {
     shortcutsList.append({ tr("Open"), "open", keyBindingsToStringList(QKeySequence::Open), {} });
+    shortcutsList.append({ tr("Open Folder"), "openfolder",
+                           { QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_O).toString() }, {} });
+    shortcutsList.append({ tr("Browse Parent Folder"), "browsefolder",
+                           { QKeySequence(Qt::ALT | Qt::Key_Up).toString() }, {} });
+    shortcutsList.append({ tr("Return to Child"), "browsechild",
+                           { QKeySequence(Qt::ALT | Qt::Key_Down).toString() }, {} });
+    shortcutsList.append({ tr("Home"), "home",
+                           { QKeySequence(Qt::CTRL | Qt::Key_H).toString(), QKeySequence(Qt::ALT | Qt::Key_Home).toString() }, {} });
     shortcutsList.append({ tr("Open URL"),
                            "openurl",
                            QStringList(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_O).toString()),
                            {} });
     shortcutsList.append({ tr("Reload File"),
                            "reloadfile",
-                           keyBindingsToStringList(QKeySequence::Refresh),
+                           keyBindingsToStringList(QKeySequence::Refresh) + QStringList{ QKeySequence(Qt::CTRL | Qt::Key_R).toString() },
                            {} });
     shortcutsList.append({ tr("Open Containing Folder"),
                            "opencontainingfolder",
@@ -93,10 +147,6 @@ void ShortcutManager::initializeShortcutsList()
             { tr("Paste"), "paste", keyBindingsToStringList(QKeySequence::Paste), {} });
     shortcutsList.append(
             { tr("Rename"), "rename", QStringList(QKeySequence(Qt::Key_F2).toString()), {} });
-    // ctrl+r for renaming, unless it conflicts with refresh (i.e. reload file)
-    if (!QKeySequence::keyBindings(QKeySequence::Refresh)
-                 .contains(QKeySequence(Qt::CTRL | Qt::Key_R)))
-        shortcutsList.last().defaultShortcuts << QKeySequence(Qt::CTRL | Qt::Key_R).toString();
     // cmd+enter for renaming, mac-style
     shortcutsList.last().defaultShortcuts.prepend(
             QKeySequence(Qt::CTRL | Qt::Key_Return).toString());
@@ -151,11 +201,11 @@ void ShortcutManager::initializeShortcutsList()
                            {} });
     shortcutsList.append({ tr("Rotate Right"),
                            "rotateright",
-                           QStringList(QKeySequence(Qt::Key_Up).toString()),
+                           QStringList(QKeySequence(Qt::Key_T).toString()),
                            {} });
     shortcutsList.append({ tr("Rotate Left"),
                            "rotateleft",
-                           QStringList(QKeySequence(Qt::Key_Down).toString()),
+                           QStringList(QKeySequence(Qt::Key_R).toString()),
                            {} });
     shortcutsList.append(
             { tr("Mirror"), "mirror", QStringList(QKeySequence(Qt::Key_F).toString()), {} });

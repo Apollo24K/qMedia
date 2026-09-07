@@ -127,6 +127,8 @@ void QVImageCore::loadFile(const QString &fileName, bool isReloading)
 void QVImageCore::activateExternalMedia(const QString &fileName,
                                         QVMediaCatalog::MediaType mediaType)
 {
+    waitingOnLoad = false;
+    waitingOnPreloadFile.clear();
     setPaused(true);
     currentFileDetails = getEmptyFileDetails();
     mediaCatalog.state().isLoadRequested = true;
@@ -207,10 +209,10 @@ QVImageCore::ReadData QVImageCore::readFile(const QString &fileName,
 
 void QVImageCore::loadPixmap(const ReadData &readData)
 {
-    // An image decode may finish after the user has switched to a video. Keep the
-    // decoded image available for later navigation without replacing the active video.
-    if (mediaCatalog.state().mediaType == QVMediaCatalog::MediaType::Video) {
-        waitingOnLoad = false;
+    // A decode can finish after switching to a video, another file, or a gallery.
+    // Cache stale results without restoring the old file or disturbing a newer load.
+    if (mediaCatalog.state().mediaType != QVMediaCatalog::MediaType::Image
+            || mediaCatalog.state().fileInfo.absoluteFilePath() != readData.absoluteFilePath) {
         addToCache(std::move(readData));
         return;
     }
@@ -291,6 +293,8 @@ void QVImageCore::loadPixmap(const ReadData &readData)
 
 void QVImageCore::closeImage()
 {
+    waitingOnLoad = false;
+    waitingOnPreloadFile.clear();
     currentFileDetails = getEmptyFileDetails();
     mediaCatalog.clearCurrentFile();
     loadEmptyPixmap();

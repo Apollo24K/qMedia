@@ -48,6 +48,33 @@ public:
         MediaType mediaType = MediaType::Unknown;
     };
 
+    struct FolderEntry
+    {
+        MediaFile file;
+        bool isDirectory = false;
+    };
+
+    // The inverse of successive Up operations, independent of media decoding.
+    class FolderHistory
+    {
+    public:
+        void clear() { steps.clear(); }
+        void remember(const QString &parent, const QString &child) { steps.append({parent, child}); }
+        QString childOf(const QString &parent) const {
+            return !steps.isEmpty() && steps.last().first == parent ? steps.last().second : QString();
+        }
+        QString takeChild(const QString &parent) {
+            const QString child = childOf(parent);
+            if (!child.isEmpty()) steps.removeLast();
+            return child;
+        }
+    private:
+        QList<QPair<QString, QString>> steps;
+    };
+
+    // One level only: folders first, followed by supported media in viewer order.
+    static QList<FolderEntry> scanGallery(const QString &dirPath, const ScanOptions &options);
+
     const State &state() const { return currentState; }
     State &state() { return currentState; }
 
@@ -55,6 +82,7 @@ public:
     void clearCurrentFile();
     void updateFolder(QString dirPath, const ScanOptions &options);
     void updateCurrentIndex();
+    void setFolderOrder(const QString &path, const QList<MediaFile> &files, const ScanOptions &options);
 
     static QList<MediaFile> scanFolder(const QString &dirPath, const ScanOptions &options);
     static MediaType mediaTypeForFile(const QFileInfo &fileInfo, const ScanOptions &options,

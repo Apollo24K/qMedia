@@ -211,11 +211,11 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
         return;
     }
     if (event->button() == Qt::BackButton) {
-        goToFile(GoToFileMode::previous);
+        event->ignore();
         return;
     }
     if (event->button() == Qt::ForwardButton) {
-        goToFile(GoToFileMode::next);
+        event->ignore();
         return;
     }
     if (event->button() == Qt::MiddleButton) {
@@ -534,13 +534,11 @@ void QVGraphicsView::loadFile(const QString &fileName)
     const QFileInfo fileInfo(sanitaryFileName);
     sanitaryFileName = fileInfo.absoluteFilePath();
     if (fileInfo.isDir()) {
-        imageCore.updateFolderInfo(sanitaryFileName);
-        if (getCurrentMedia().folderFiles.isEmpty())
-            closeImage();
-        else
-            loadFile(getCurrentMedia().folderFiles.constFirst().absoluteFilePath);
+        emit folderRequested(sanitaryFileName);
         return;
     }
+
+    emit mediaRequested();
 
     const auto mediaType = imageCore.mediaTypeForFile(fileInfo);
     if (mediaType == QVMediaCatalog::MediaType::Video) {
@@ -647,7 +645,7 @@ void QVGraphicsView::postLoad()
     const QString path = getCurrentMedia().fileInfo.absoluteFilePath();
     if (path != distortSource) restoreSessionEdits(path);
     updateLoadedPixmapItem();
-    qvApp->getActionManager().addFileToRecentsList(getCurrentMedia().fileInfo);
+    if (!path.isEmpty()) qvApp->getActionManager().addFileToRecentsList(getCurrentMedia().fileInfo);
 
     emit fileChanged();
 }

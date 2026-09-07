@@ -18,6 +18,9 @@ set(TEST_SOURCES
     ../src/qvinfodialog.cpp
     ../src/qvimagecore.cpp
     ../src/qvmediacatalog.cpp
+    ../src/qvgallerymodel.cpp
+    ../src/qvgalleryview.cpp
+    ../src/qvfileoperations.cpp
     ../src/qvmediaformats.cpp
     ../src/qvclipboard.cpp
     ../src/qvexport.cpp
