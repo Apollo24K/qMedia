@@ -604,13 +604,24 @@ void QVVideoView::seekToPercent(int percent)
 
 void QVVideoView::setPlaybackSpeed(int percent)
 {
-    playbackSpeedPercent = qBound(25, percent, 400);
+    percent = qBound(25, percent, 400);
+    if (percent == playbackSpeedPercent) return;
+    playbackSpeedPercent = percent;
     player.setPlaybackRate(playbackSpeedPercent / 100.0);
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     if (audioPlayer) {
         audioPlayer->setPlaybackRate(playbackSpeedPercent / 100.0);
-        if (!audioSynchronizationPending)
-            setSynchronizedPosition(player.position());
+        if (!audioSynchronizationPending) {
+            const quint64 generation = ++audioSyncGeneration;
+            // Let both rate changes settle, then correct only companion audio.
+            // Seeking the visible player here flushes playback and causes a hitch.
+            QTimer::singleShot(100, this, [this, generation]() {
+                if (generation != audioSyncGeneration || !audioPlayer
+                        || audioSynchronizationPending) return;
+                if (qAbs(audioPlayer->position() - player.position()) > 75)
+                    audioPlayer->setPosition(player.position());
+            });
+        }
     }
 #endif
 }

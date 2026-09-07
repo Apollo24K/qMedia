@@ -42,6 +42,7 @@
 #include <QTemporaryFile>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QLabel>
 #include <QTextEdit>
 #include <QPlainTextEdit>
 #include <QAbstractSpinBox>
@@ -127,6 +128,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     // Timer for slideshow
     slideshowTimer = new QTimer(this);
+    slideshowTimer->setObjectName("slideshowTimer");
+    slideshowTimer->setTimerType(Qt::PreciseTimer);
     connect(slideshowTimer, &QTimer::timeout, this, &MainWindow::slideshowAction);
 
     // Context menu
@@ -246,6 +249,9 @@ void MainWindow::finishDistortShortcut()
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
+    if (speedIndicator && watched == graphicsView->viewport()
+            && (event->type() == QEvent::Resize || event->type() == QEvent::Move))
+        positionSpeedIndicator();
     if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonRelease) {
         auto *widget = qobject_cast<QWidget *>(watched);
         const auto *mouse = static_cast<QMouseEvent *>(event);
@@ -553,6 +559,19 @@ void MainWindow::openFile(const QString &fileName)
     cancelSlideshow();
 }
 
+MainWindow *MainWindow::duplicateWindow()
+{
+    auto *window = qvApp->newWindow();
+    window->resize(size());
+    if (isBrowsingFolder()) {
+        window->showFolder(galleryView->folderPath(), galleryView->selectedPaths().value(0));
+    } else if (getCurrentMedia().isLoadRequested) {
+        window->openFile(getCurrentMedia().fileInfo.absoluteFilePath());
+    }
+    window->folderHistory = folderHistory;
+    return window;
+}
+
 QVMediaCatalog::ScanOptions MainWindow::galleryScanOptions() const
 {
     QVMediaCatalog::ScanOptions options;
@@ -698,8 +717,13 @@ void MainWindow::settingsUpdated()
 #endif
 
     // slideshow timer
-    slideshowTimer->setInterval(static_cast<int>(
-            settingsManager.getDouble(SettingsManager::Setting::SlideshowTimer) * 1000));
+    const int configuredInterval = qBound(100, qRound(
+            settingsManager.getDouble(SettingsManager::Setting::SlideshowTimer) * 1000), 100000);
+    if (configuredInterval != slideshowDefaultIntervalMs) {
+        updateSlideshowInterval(slideshowDefaultIntervalMs == 0 ? configuredInterval
+                : qRound(slideshowIntervalMs * (double(configuredInterval) / slideshowDefaultIntervalMs)));
+        slideshowDefaultIntervalMs = configuredInterval;
+    }
 
     ui->fullscreenLabel->setVisible(
             settingsManager.getBool(SettingsManager::Setting::FullScreenDetails)
@@ -788,6 +812,10 @@ void MainWindow::disableActions()
                                       && !folderHistory.childOf(galleryView->folderPath()).isEmpty());
                 } else if (cloneData.last() == "gifdisable") {
                     clone->setEnabled(getImageDetails().isMovieLoaded);
+                } else if (cloneData.last() == "speeddisable") {
+                    clone->setEnabled(slideshowTimer->isActive()
+                                      || getImageDetails().isMovieLoaded
+                                      || graphicsView->isVideoLoaded());
                 } else if (cloneData.last() == "playbackdisable") {
                     clone->setEnabled(getImageDetails().isMovieLoaded
                                       || graphicsView->isVideoLoaded());
@@ -1763,12 +1791,13 @@ void MainWindow::toggleSlideshow()
             slideshowAction->setIcon(QIcon::fromTheme("media-playback-start"));
         }
     } else {
-        slideshowTimer->start();
+        slideshowTimer->start(slideshowIntervalMs);
         for (const auto &slideshowAction : slideshowActions) {
             slideshowAction->setText(tr("Stop S&lideshow"));
             slideshowAction->setIcon(QIcon::fromTheme("media-playback-stop"));
         }
     }
+    disableActions();
 }
 
 void MainWindow::cancelSlideshow()
@@ -1779,6 +1808,10 @@ void MainWindow::cancelSlideshow()
 
 void MainWindow::slideshowAction()
 {
+    // A speed change may have scheduled only the remainder of the previous slide.
+    // Subsequent slides use the full interval, without changing slideshow active state.
+    if (slideshowTimer->isActive())
+        slideshowTimer->setInterval(slideshowIntervalMs);
     if (qvApp->getSettingsManager().getBool(SettingsManager::Setting::SlideshowReversed))
         previousFile();
     else
@@ -1787,46 +1820,89 @@ void MainWindow::slideshowAction()
 
 void MainWindow::decreaseSpeed()
 {
-    if (getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video) {
-        if (graphicsView->isVideoLoaded()) {
-            graphicsView->setVideoPlaybackSpeed(graphicsView->videoPlaybackSpeed() - 25);
-        }
-        return;
-    }
-
-    if (!getImageDetails().isMovieLoaded)
-        return;
-
-    graphicsView->setSpeed(graphicsView->getLoadedMovie().speed() - 25);
+    changeSpeed(-25);
 }
 
 void MainWindow::resetSpeed()
 {
-    if (getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video) {
-        if (graphicsView->isVideoLoaded())
-            graphicsView->setVideoPlaybackSpeed(100);
-        return;
-    }
-
-    if (!getImageDetails().isMovieLoaded)
-        return;
-
-    graphicsView->setSpeed(100);
+    changeSpeed(0, true);
 }
 
 void MainWindow::increaseSpeed()
 {
-    if (getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video) {
-        if (graphicsView->isVideoLoaded()) {
-            graphicsView->setVideoPlaybackSpeed(graphicsView->videoPlaybackSpeed() + 25);
-        }
+    changeSpeed(25);
+}
+
+void MainWindow::updateSlideshowInterval(int intervalMs)
+{
+    intervalMs = qBound(100, intervalMs, 100000);
+    if (slideshowTimer->isActive()) {
+        if (intervalMs == slideshowIntervalMs) return;
+        // Keep the fraction of the current slide still to play. In particular,
+        // repeated shortcut presses must never postpone advancement indefinitely.
+        const double remaining = qMax(0, slideshowTimer->remainingTime())
+                / double(slideshowIntervalMs);
+        slideshowTimer->start(qMax(1, qRound(remaining * intervalMs)));
+    } else {
+        slideshowTimer->setInterval(intervalMs);
+    }
+    slideshowIntervalMs = intervalMs;
+}
+
+void MainWindow::changeSpeed(int delta, bool reset)
+{
+    // During a slideshow the shared shortcuts control slide timing, even on animated media.
+    if (slideshowTimer->isActive()) {
+        updateSlideshowInterval(reset ? slideshowDefaultIntervalMs
+                : qRound(slideshowIntervalMs * (delta > 0 ? 1.0 / 1.25 : 1.25)));
+        showSpeedIndicator(tr("Slideshow: %1 s / slide")
+                                   .arg(slideshowIntervalMs / 1000.0, 0, 'f', 2));
         return;
     }
 
-    if (!getImageDetails().isMovieLoaded)
-        return;
+    int speed;
+    if (getCurrentMedia().mediaType == QVMediaCatalog::MediaType::Video) {
+        if (!graphicsView->isVideoLoaded()) return;
+        graphicsView->setVideoPlaybackSpeed(reset ? 100 : graphicsView->videoPlaybackSpeed() + delta);
+        speed = graphicsView->videoPlaybackSpeed();
+    } else {
+        if (!getImageDetails().isMovieLoaded) return;
+        graphicsView->setSpeed(reset ? 100 : graphicsView->getLoadedMovie().speed() + delta);
+        speed = graphicsView->getLoadedMovie().speed();
+    }
+    showSpeedIndicator(tr("Playback: %1%").arg(speed));
+}
 
-    graphicsView->setSpeed(graphicsView->getLoadedMovie().speed() + 25);
+void MainWindow::showSpeedIndicator(const QString &text)
+{
+    if (!speedIndicator) {
+        // Viewport children move when QGraphicsView scrolls the canvas.
+        speedIndicator = new QLabel(graphicsView);
+        speedIndicator->setObjectName("speedIndicator");
+        speedIndicator->setAttribute(Qt::WA_TransparentForMouseEvents);
+        speedIndicator->setFocusPolicy(Qt::NoFocus);
+        speedIndicator->setAlignment(Qt::AlignCenter);
+        speedIndicator->setStyleSheet(QStringLiteral(
+                "QLabel { background: rgba(30, 30, 30, 220); color: white;"
+                " border-radius: 8px; padding: 8px 14px; font-weight: bold; }"));
+        speedIndicatorTimer = new QTimer(this);
+        speedIndicatorTimer->setSingleShot(true);
+        connect(speedIndicatorTimer, &QTimer::timeout, speedIndicator, &QWidget::hide);
+    }
+    speedIndicator->setText(text);
+    positionSpeedIndicator();
+    speedIndicator->show();
+    speedIndicator->raise();
+    speedIndicatorTimer->start(1500);
+}
+
+void MainWindow::positionSpeedIndicator()
+{
+    const QSize available = graphicsView->viewport()->size();
+    speedIndicator->resize(speedIndicator->sizeHint().boundedTo(available));
+    speedIndicator->move(graphicsView->viewport()->pos()
+                         + QPoint((available.width() - speedIndicator->width()) / 2,
+                                  qMax(0, available.height() - speedIndicator->height() - 24)));
 }
 
 void MainWindow::toggleFullScreen()

@@ -163,9 +163,7 @@ QMenuBar *ActionManager::buildMenuBar(QWidget *parent)
     // Beginning of file menu
     auto *fileMenu = new QMenu(tr("&File"), menuBar);
 
-#ifdef Q_OS_MACOS
     addCloneOfAction(fileMenu, "newwindow");
-#endif
     addCloneOfAction(fileMenu, "open");
     addCloneOfAction(fileMenu, "openfolder");
     addCloneOfAction(fileMenu, "browsefolder");
@@ -533,7 +531,19 @@ void ActionManager::actionTriggered(QAction *triggeredAction, MainWindow *releva
         QCoreApplication::quit();
 #endif
     } else if (key == "newwindow") {
-        qvApp->newWindow();
+        if (!relevantWindow) {
+            // A global menu action can still duplicate the last active window.
+            for (auto *widget : QApplication::topLevelWidgets()) {
+                if (qobject_cast<MainWindow *>(widget)) {
+                    relevantWindow = qvApp->getMainWindow(false);
+                    break;
+                }
+            }
+        }
+        if (relevantWindow)
+            relevantWindow->duplicateWindow();
+        else
+            qvApp->newWindow();
     } else if (key == "open") {
         qvApp->pickFile(relevantWindow);
     } else if (key == "openfolder") {
@@ -819,7 +829,7 @@ void ActionManager::initializeActionLibrary()
     saveFrameAsAction->setData({ "mediadisable" });
     actionLibrary.insert("saveframeas", saveFrameAsAction);
 
-    auto *layersAction = new QAction(QIcon(":/layers/source.svg"), tr("&Layers HUD"));
+    auto *layersAction = new QAction(QIcon(":/layers/source.svg"), tr("&Layers..."));
     actionLibrary.insert("layers", layersAction);
 
     auto *filtersAction = new QAction(QIcon::fromTheme("preferences-color"), tr("&Filters..."));
@@ -851,17 +861,17 @@ void ActionManager::initializeActionLibrary()
 
     auto *decreaseSpeedAction =
             new QAction(QIcon::fromTheme("media-seek-backward"), tr("&Decrease Speed"));
-    decreaseSpeedAction->setData({ "playbackdisable" });
+    decreaseSpeedAction->setData({ "speeddisable" });
     actionLibrary.insert("decreasespeed", decreaseSpeedAction);
 
     auto *resetSpeedAction =
             new QAction(QIcon::fromTheme("media-playback-start"), tr("&Reset Speed"));
-    resetSpeedAction->setData({ "playbackdisable" });
+    resetSpeedAction->setData({ "speeddisable" });
     actionLibrary.insert("resetspeed", resetSpeedAction);
 
     auto *increaseSpeedAction =
             new QAction(QIcon::fromTheme("media-skip-forward"), tr("&Increase Speed"));
-    increaseSpeedAction->setData({ "playbackdisable" });
+    increaseSpeedAction->setData({ "speeddisable" });
     actionLibrary.insert("increasespeed", increaseSpeedAction);
 
     for (int position = 0; position <= 9; ++position) {

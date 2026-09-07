@@ -313,10 +313,10 @@ void ShortcutManager::initializeShortcutsList()
         < QOperatingSystemVersion(QOperatingSystemVersion::MacOS, 13)) {
         shortcutsList.last().readableName = tr("Preferences");
     }
-    // mac exclusive shortcuts
-#ifdef Q_OS_MACOS
     shortcutsList.append(
             { tr("New Window"), "newwindow", keyBindingsToStringList(QKeySequence::New), {} });
+    // mac exclusive shortcuts
+#ifdef Q_OS_MACOS
     shortcutsList.append({ tr("Close Window"),
                            "closewindow",
                            QStringList(QKeySequence(Qt::CTRL | Qt::Key_W).toString()),

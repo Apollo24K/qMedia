@@ -56,8 +56,10 @@ public:
 
 private slots:
     void testClonedActionsUntracked();
+    void testDuplicateWindow();
     void testCanvasActionsSupportAllVisualMedia();
     void testPlaybackActionsAndDefaultShortcuts();
+    void testSpeedControlsAndIndicator();
     void testMediaBackendSetting();
     void testShortcutSearch();
     void testImageRequestAfterVideoIsNotDiscarded();
@@ -94,6 +96,53 @@ private slots:
 ActionManagerTests::ActionManagerTests() { }
 
 ActionManagerTests::~ActionManagerTests() { }
+
+void ActionManagerTests::testDuplicateWindow()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QImage image(80, 60, QImage::Format_ARGB32);
+    image.fill(Qt::blue);
+    const QString path = directory.filePath("photo.png");
+    QVERIFY(image.save(path));
+    MainWindow source;
+    source.setAttribute(Qt::WA_DeleteOnClose, false);
+    source.show();
+    struct CloseWindow { MainWindow &window; ~CloseWindow() { window.close(); } } cleanup{source};
+
+    struct WindowCleanup {
+        static void cleanup(MainWindow *window) {
+            window->setAttribute(Qt::WA_DeleteOnClose, false);
+            window->close();
+            delete window;
+        }
+    };
+    QScopedPointer<MainWindow, WindowCleanup> home(source.duplicateWindow());
+    QVERIFY(home->findChild<QVGalleryView *>()->isHome());
+    source.showFolder(directory.path());
+    QScopedPointer<MainWindow, WindowCleanup> folder(source.duplicateWindow());
+    QVERIFY(folder->isBrowsingFolder());
+    QCOMPARE(folder->findChild<QVGalleryView *>()->folderPath(), directory.path());
+
+    source.openFile(path);
+    QTRY_VERIFY(source.getIsMediaLoaded());
+    const auto before = QApplication::topLevelWidgets();
+    const auto actions = qvApp->getActionManager().getAllClonesOfAction("newwindow", &source);
+    QVERIFY(!actions.isEmpty());
+    actions.first()->trigger();
+    MainWindow *created = nullptr;
+    for (auto *widget : QApplication::topLevelWidgets()) {
+        if (!before.contains(widget) && qobject_cast<MainWindow *>(widget))
+            created = qobject_cast<MainWindow *>(widget);
+    }
+    QVERIFY(created);
+    QScopedPointer<MainWindow, WindowCleanup> duplicate(created);
+    QTRY_VERIFY(duplicate->getIsMediaLoaded());
+    QCOMPARE(duplicate->getCurrentMedia().fileInfo.absoluteFilePath(), path);
+    duplicate->showHome();
+    QVERIFY(source.getIsMediaLoaded());
+    QCOMPARE(source.getCurrentMedia().fileInfo.absoluteFilePath(), path);
+}
 
 void ActionManagerTests::testFolderGallery()
 {
@@ -1834,13 +1883,99 @@ void ActionManagerTests::testCanvasActionsSupportAllVisualMedia()
     }
 }
 
+void ActionManagerTests::testSpeedControlsAndIndicator()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QImage image(80, 60, QImage::Format_ARGB32);
+    image.fill(Qt::blue);
+    const QString path = directory.filePath("photo.png");
+    QVERIFY(image.save(path));
+    MainWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    struct CloseWindow { MainWindow &window; ~CloseWindow() { window.close(); } } cleanup{window};
+    window.show();
+    window.openFile(path);
+    QTRY_VERIFY(window.getIsPixmapLoaded());
+    auto *canvas = window.findChild<QVGraphicsView *>();
+    auto *timer = window.findChild<QTimer *>("slideshowTimer");
+    QVERIFY(canvas && timer);
+    const auto action = [&](const QString &key) {
+        return qvApp->getActionManager().getAllClonesOfAction(key, &window).first();
+    };
+    QVERIFY(!action("increasespeed")->isEnabled());
+    const int baseInterval = timer->interval();
+    window.toggleSlideshow();
+    QVERIFY(action("increasespeed")->isEnabled());
+    QTest::qWait(150);
+    action("increasespeed")->trigger();
+    QVERIFY(timer->remainingTime() <= qRound((baseInterval - 100) / 1.25));
+    QVERIFY(timer->isActive());
+    auto *indicator = window.findChild<QLabel *>("speedIndicator");
+    QVERIFY(indicator && indicator->isVisible());
+    QVERIFY(indicator->text().contains(QString::number(baseInterval / 1250.0, 'f', 2)));
+    action("decreasespeed")->trigger();
+    QVERIFY(timer->remainingTime() <= baseInterval - 100);
+    action("resetspeed")->trigger();
+    QVERIFY(timer->remainingTime() <= baseInterval - 100);
+    for (int i = 0; i < 50; ++i) action("decreasespeed")->trigger();
+    QVERIFY(indicator->text().contains("100.00"));
+    window.cancelSlideshow();
+    window.toggleSlideshow();
+    QCOMPARE(timer->interval(), 100000);
+    for (int i = 0; i < 50; ++i) action("increasespeed")->trigger();
+    QVERIFY(indicator->text().contains("0.10"));
+    QSignalSpy advances(timer, &QTimer::timeout);
+    QTRY_VERIFY_WITH_TIMEOUT(advances.count() >= 2, 1500);
+    QCOMPARE(timer->interval(), 100);
+    action("resetspeed")->trigger();
+    window.cancelSlideshow();
+    window.toggleSlideshow();
+    QCOMPARE(timer->interval(), baseInterval);
+    window.resize(700, 500);
+    QCoreApplication::processEvents();
+    QVERIFY2(qAbs(indicator->geometry().center().x() - canvas->viewport()->geometry().center().x()) <= 1,
+             qPrintable(QString("Indicator %1,%2 %3x%4; viewport %5x%6")
+                     .arg(indicator->x()).arg(indicator->y()).arg(indicator->width())
+                     .arg(indicator->height()).arg(canvas->viewport()->width())
+                     .arg(canvas->viewport()->height())));
+    QCOMPARE(indicator->geometry().bottom(), canvas->viewport()->geometry().bottom() - 24);
+    QTRY_VERIFY_WITH_TIMEOUT(!indicator->isVisible(), 2500);
+    window.cancelSlideshow();
+    QVERIFY(!action("increasespeed")->isEnabled());
+
+    // Two-frame GIF, avoiding a hardware-dependent video decoder in this integration test.
+    QFile gif(directory.filePath("animation.gif"));
+    QVERIFY(gif.open(QIODevice::WriteOnly));
+    gif.write(QByteArray::fromHex(
+            "47494638396101000100800000000000ffffff"
+            "21ff0b4e45545343415045322e300301000000"
+            "21f904000a0000002c0000000001000100000202440100"
+            "21f904000a0000002c00000000010001000002024c01003b"));
+    gif.close();
+    window.openFile(gif.fileName());
+    QTRY_VERIFY(window.getImageDetails().isMovieLoaded);
+    action("increasespeed")->trigger();
+    QCOMPARE(canvas->getLoadedMovie().speed(), 125);
+    QVERIFY(indicator->isVisible());
+    QVERIFY(indicator->text().contains("125%"));
+    window.toggleSlideshow();
+    action("increasespeed")->trigger();
+    QCOMPARE(canvas->getLoadedMovie().speed(), 125);
+    QVERIFY(timer->interval() <= qRound(baseInterval / 1.25));
+    QVERIFY(indicator->text().contains(QString::number(baseInterval / 1250.0, 'f', 2)));
+    window.cancelSlideshow();
+    action("resetspeed")->trigger();
+    QCOMPARE(canvas->getLoadedMovie().speed(), 100);
+    QVERIFY(indicator->text().contains("100%"));
+}
+
 void ActionManagerTests::testPlaybackActionsAndDefaultShortcuts()
 {
     const auto &actionLibrary = qvApp->getActionManager().getActionLibrary();
     const QStringList sharedPlaybackActions = { "pause",         "loop",
                                                 "previousframe",
-                                                "nextframe",     "decreasespeed",
-                                                "resetspeed",    "increasespeed" };
+                                                "nextframe" };
     for (const QString &key : sharedPlaybackActions) {
         QVERIFY2(actionLibrary.contains(key), qPrintable(key));
         QCOMPARE(actionLibrary.value(key)->data().toStringList().constLast(),
@@ -1861,6 +1996,7 @@ void ActionManagerTests::testPlaybackActionsAndDefaultShortcuts()
     QHash<QString, QStringList> defaultShortcuts;
     for (const auto &shortcut : qvApp->getShortcutManager().getShortcutsList())
         defaultShortcuts.insert(shortcut.name, shortcut.defaultShortcuts);
+    QVERIFY(defaultShortcuts.value("newwindow").contains(QKeySequence(Qt::CTRL | Qt::Key_N).toString()));
 
     QVERIFY(defaultShortcuts.value("pause").contains(QKeySequence(Qt::Key_Space).toString()));
     QVERIFY(!defaultShortcuts.value("pause").contains(QKeySequence(Qt::Key_P).toString()));

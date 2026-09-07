@@ -18,6 +18,7 @@ class QVLayersHud;
 class QVFiltersDialog;
 class QVGalleryView;
 class QStackedWidget;
+class QLabel;
 
 class MainWindow : public QMainWindow
 {
@@ -59,6 +60,7 @@ public:
 
     void pickUrl();
     void pickFolder();
+    MainWindow *duplicateWindow();
     void showHome();
     void showFolder(const QString &path, const QString &selectedPath = {});
     void browseParentFolder();
@@ -201,6 +203,14 @@ private:
     QMenu *virtualMenu;
 
     QTimer *slideshowTimer;
+    int slideshowIntervalMs = 5000;
+    int slideshowDefaultIntervalMs = 0;
+    void updateSlideshowInterval(int intervalMs);
+    void changeSpeed(int delta, bool reset = false);
+    void showSpeedIndicator(const QString &text);
+    void positionSpeedIndicator();
+    QLabel *speedIndicator = nullptr;
+    QTimer *speedIndicatorTimer = nullptr;
 
     QShortcut *escShortcut;
 
