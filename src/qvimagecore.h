@@ -54,9 +54,10 @@ public:
 
     explicit QVImageCore(QObject *parent = nullptr);
 
+    void clearNavigationGroup() { mediaCatalog.clearNavigationGroup(); }
     void setFolderOrder(const QString &path, const QList<QVMediaCatalog::MediaFile> &files,
-                        const QVMediaCatalog::ScanOptions &options) {
-        mediaCatalog.setFolderOrder(path, files, options);
+                        const QVMediaCatalog::ScanOptions &options, bool selectedGroup = false) {
+        mediaCatalog.setFolderOrder(path, files, options, selectedGroup);
     }
     void loadFile(const QString &fileName, bool isReloading = false);
     void activateExternalMedia(const QString &fileName, QVMediaCatalog::MediaType mediaType);

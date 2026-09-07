@@ -9,6 +9,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
+#include <QSet>
 #include <QScrollBar>
 #include <QShortcut>
 #include <QStackedWidget>
@@ -197,11 +198,21 @@ QVGalleryView::QVGalleryView(QWidget *parent) : QWidget(parent)
             QTimer::singleShot(0, this, &QVGalleryView::restoreScrollPosition);
     });
     galleryLayout->addWidget(list, 1);
-    selectionCount = new QLabel(list);
+    selectionBar = new QWidget(list);
+    selectionBar->setObjectName("gallerySelectionBar");
+    selectionBar->setAttribute(Qt::WA_StyledBackground);
+    auto *selectionLayout = new QHBoxLayout(selectionBar);
+    selectionLayout->setContentsMargins(12, 6, 12, 6);
+    selectionCount = new QLabel(selectionBar);
+    selectionLayout->addWidget(selectionCount);
+    viewGroup = new QPushButton(tr("View Group"), selectionBar);
+    viewGroup->setObjectName("galleryViewGroup");
+    selectionLayout->addWidget(viewGroup);
+    connect(viewGroup, &QPushButton::clicked, this, &QVGalleryView::groupActivated);
     selectionCount->setObjectName("gallerySelectionCount");
     selectionCount->setAttribute(Qt::WA_TransparentForMouseEvents);
     selectionCount->setAlignment(Qt::AlignCenter);
-    selectionCount->hide();
+    selectionBar->hide();
     connect(list->selectionModel(), &QItemSelectionModel::selectionChanged,
             this, &QVGalleryView::updateSelectionCount);
     connect(model, &QAbstractItemModel::modelReset, this, &QVGalleryView::updateSelectionCount);
@@ -216,12 +227,16 @@ QVGalleryView::QVGalleryView(QWidget *parent) : QWidget(parent)
     connect(list, &QListView::doubleClicked, this, activate);
     // activated can also be emitted for a platform's single-click activation.
     // Keyboard activation is handled separately to avoid opening a file twice.
+    const auto activateSelection = [this, activate] {
+        if (selectedMediaFiles().size() > 1) emit groupActivated();
+        else activate(list->currentIndex());
+    };
     auto *enter = new QShortcut(QKeySequence(Qt::Key_Return), list);
     enter->setContext(Qt::WidgetShortcut);
-    connect(enter, &QShortcut::activated, this, [this, activate] { activate(list->currentIndex()); });
+    connect(enter, &QShortcut::activated, this, activateSelection);
     auto *keypadEnter = new QShortcut(QKeySequence(Qt::Key_Enter), list);
     keypadEnter->setContext(Qt::WidgetShortcut);
-    connect(keypadEnter, &QShortcut::activated, this, [this, activate] { activate(list->currentIndex()); });
+    connect(keypadEnter, &QShortcut::activated, this, activateSelection);
     connect(model, &QVGalleryModel::folderLoaded, this, [this](const QString &error) {
         folderLoading = false;
         const int count = model->rowCount();
@@ -263,7 +278,7 @@ void QVGalleryView::setBackgroundColor(const QColor &color)
     colors.setColor(QPalette::ButtonText, text);
     // Explicit button surfaces also keep text readable with native light styles.
     setStyleSheet(QString("QLabel { color: %1; }"
-                          "QLabel#gallerySelectionCount { background: %2; border: 1px solid %3;"
+                          "QWidget#gallerySelectionBar { background: %2; border: 1px solid %3;"
                           " border-radius: 12px; padding: 6px 12px; }"
                           "QPushButton { color: %1; background: %2; border: 1px solid %3;"
                           " border-radius: 6px; padding: 4px 12px; outline: none; }"
@@ -312,6 +327,17 @@ QStringList QVGalleryView::selectedPaths() const
     return paths;
 }
 
+QList<QVMediaCatalog::MediaFile> QVGalleryView::selectedMediaFiles() const
+{
+    const QStringList selected = selectedPaths();
+    const QSet<QString> paths(selected.cbegin(), selected.cend());
+    QList<QVMediaCatalog::MediaFile> files;
+    for (const auto &file : model->mediaFiles()) {
+        if (paths.contains(file.absoluteFilePath)) files.append(file);
+    }
+    return files;
+}
+
 bool QVGalleryView::hasSelection() const { return list->selectionModel()->hasSelection(); }
 
 void QVGalleryView::restoreScrollPosition()
@@ -355,16 +381,17 @@ void QVGalleryView::updateSelectionCount()
 {
     const int count = list->selectionModel()->selectedIndexes().size();
     selectionCount->setText(tr("%1 selected").arg(count));
-    selectionCount->adjustSize();
+    viewGroup->setVisible(selectedMediaFiles().size() > 1);
+    selectionBar->adjustSize();
     positionSelectionCount();
-    selectionCount->setVisible(count > 0);
-    selectionCount->raise();
+    selectionBar->setVisible(count > 0);
+    selectionBar->raise();
 }
 
 void QVGalleryView::positionSelectionCount()
 {
-    selectionCount->move(qMax(0, (list->viewport()->width() - selectionCount->width()) / 2),
-                         qMax(0, list->viewport()->height() - selectionCount->height() - 12));
+    selectionBar->move(qMax(0, (list->viewport()->width() - selectionBar->width()) / 2),
+                         qMax(0, list->viewport()->height() - selectionBar->height() - 12));
 }
 
 void QVGalleryView::showHome(const QList<QPair<QString, QString>> &recents)

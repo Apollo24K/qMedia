@@ -5,6 +5,7 @@
 #include <QWidget>
 
 class QLabel;
+class QPushButton;
 class QListView;
 class QStackedWidget;
 class QVBoxLayout;
@@ -22,6 +23,7 @@ public:
     QList<QVMediaCatalog::MediaFile> mediaFiles() const { return model->mediaFiles(); }
     void setBackgroundColor(const QColor &color);
     QStringList selectedPaths() const;
+    QList<QVMediaCatalog::MediaFile> selectedMediaFiles() const;
     bool hasSelection() const;
     void clearSelection();
     void zoom(int direction);
@@ -29,6 +31,7 @@ public:
 
 signals:
     void pathActivated(const QString &path);
+    void groupActivated();
     void openFileRequested();
     void fullscreenRequested();
     void selectionChanged();
@@ -44,6 +47,8 @@ private:
     QVGalleryModel *model;
     QListView *list;
     QStackedWidget *pages;
+    QWidget *selectionBar;
+    QPushButton *viewGroup;
     QLabel *selectionCount;
     void updateSelectionCount();
     void positionSelectionCount();

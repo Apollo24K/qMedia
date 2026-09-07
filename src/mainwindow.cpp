@@ -83,6 +83,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     contentPages->addWidget(graphicsView);
     centralWidget()->layout()->addWidget(contentPages);
     connect(galleryView, &QVGalleryView::pathActivated, this, &MainWindow::openFile);
+    connect(galleryView, &QVGalleryView::groupActivated, this, [this] {
+        const auto files = galleryView->selectedMediaFiles();
+        if (files.size() < 2) return;
+        graphicsView->setFolderOrder(galleryView->folderPath(), files, galleryScanOptions(), true);
+        graphicsView->loadFile(files.first().absoluteFilePath);
+        cancelSlideshow();
+    });
     connect(galleryView, &QVGalleryView::openFileRequested, this, [this] { qvApp->pickFile(this); });
     connect(galleryView, &QVGalleryView::fullscreenRequested, this, &MainWindow::toggleFullScreen);
     connect(galleryView, &QVGalleryView::selectionChanged, this, &MainWindow::disableActions);
@@ -552,6 +559,7 @@ void MainWindow::fullscreenChanged()
 
 void MainWindow::openFile(const QString &fileName)
 {
+    graphicsView->clearNavigationGroup();
     if (isBrowsingFolder() && QFileInfo(fileName).isFile()
             && QFileInfo(fileName).absolutePath() == galleryView->folderPath())
         graphicsView->setFolderOrder(galleryView->folderPath(), galleryView->mediaFiles(), galleryScanOptions());
@@ -604,6 +612,7 @@ void MainWindow::showHome()
     contentPages->setCurrentWidget(galleryView);
     cancelSlideshow();
     graphicsView->closeImage();
+    graphicsView->clearNavigationGroup();
     if (layersHud) layersHud->setVisible(false);
     if (filtersDialog) filtersDialog->hide();
     refreshHomeRecents();
@@ -629,6 +638,7 @@ void MainWindow::showFolder(const QString &path, const QString &selectedPath)
     contentPages->setCurrentWidget(galleryView);
     cancelSlideshow();
     graphicsView->closeImage();
+    graphicsView->clearNavigationGroup();
     if (layersHud) layersHud->setVisible(false);
     if (filtersDialog) filtersDialog->hide();
     galleryView->openFolder(folderPath, galleryScanOptions(), selectedPath);

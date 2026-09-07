@@ -82,7 +82,8 @@ public:
     void clearCurrentFile();
     void updateFolder(QString dirPath, const ScanOptions &options);
     void updateCurrentIndex();
-    void setFolderOrder(const QString &path, const QList<MediaFile> &files, const ScanOptions &options);
+    void setFolderOrder(const QString &path, const QList<MediaFile> &files, const ScanOptions &options, bool selectedGroup = false);
+    void clearNavigationGroup();
 
     static QList<MediaFile> scanFolder(const QString &dirPath, const ScanOptions &options);
     static MediaType mediaTypeForFile(const QFileInfo &fileInfo, const ScanOptions &options,
@@ -104,6 +105,7 @@ private:
         }
     };
 
+    bool navigationGroup = false;
     State currentState;
     DirInfo lastDirInfo;
 };

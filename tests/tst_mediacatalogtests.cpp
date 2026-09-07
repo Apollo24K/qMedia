@@ -20,6 +20,7 @@ private slots:
     void galleryIncludesFoldersWithoutRecursing();
     void remembersFolderDescent();
     void preservesSortedNeighborsOnRescan();
+    void preservesSelectedGroup();
 };
 
 void MediaCatalogTests::remembersFolderDescent()
@@ -58,6 +59,40 @@ static QVMediaCatalog::ScanOptions mixedMediaOptions()
     options.supportedMedia.append(
             { QVMediaCatalog::MediaType::Video, { ".mp4" }, { "video/mp4" } });
     return options;
+}
+
+void MediaCatalogTests::preservesSelectedGroup()
+{
+    QTemporaryDir directory;
+    const auto options = mixedMediaOptions();
+    const QString a = createFile(directory.path(), "A.png");
+    createFile(directory.path(), "B.png");
+    createFile(directory.path(), "C.png");
+    const QString d = createFile(directory.path(), "D.mp4");
+    auto files = QVMediaCatalog::scanFolder(directory.path(), options);
+    QVMediaCatalog::sortFiles(files, 0, false);
+    QVMediaCatalog catalog;
+    catalog.setFolderOrder(directory.path(), {files[0], files[3]}, options, true);
+    catalog.setCurrentFile(QFileInfo(a));
+    catalog.updateFolder({}, options);
+    QCOMPARE(catalog.state().folderFiles.size(), 2);
+    catalog.setCurrentFile(QFileInfo(d));
+    QCOMPARE(catalog.state().currentIndexInFolder, 1);
+    QCOMPARE(catalog.state().mediaType, QVMediaCatalog::MediaType::Video);
+    createFile(directory.path(), "E.png");
+    catalog.updateFolder({}, options);
+    QCOMPARE(catalog.state().folderFiles.size(), 2);
+    QVERIFY(QFile::remove(a));
+    catalog.updateFolder({}, options);
+    QCOMPARE(catalog.state().folderFiles.size(), 1);
+    QCOMPARE(catalog.state().currentIndexInFolder, 0);
+    catalog.clearNavigationGroup();
+    catalog.updateFolder({}, options);
+    QCOMPARE(catalog.state().folderFiles.size(), 4);
+    catalog.setFolderOrder(directory.path(), {files[3]}, options, true);
+    catalog.setCurrentFile(QFileInfo(directory.filePath("B.png")));
+    catalog.updateFolder({}, options);
+    QCOMPARE(catalog.state().folderFiles.size(), 4);
 }
 
 void MediaCatalogTests::preservesSortedNeighborsOnRescan()

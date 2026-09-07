@@ -83,6 +83,7 @@ private slots:
     void testFolderGallery();
     void testGalleryAsyncRequests();
     void testGalleryQuickActions();
+    void testGalleryGroup();
     void testCombinedOpenDialog();
     void testGalleryLayoutAndSelection();
     void testGalleryRefreshPosition();
@@ -218,6 +219,68 @@ void ActionManagerTests::testFolderGallery()
     QVERIFY(!window.getCurrentMedia().isLoadRequested);
     window.openFile(path);
     QTRY_VERIFY(window.getIsMediaLoaded());
+}
+
+void ActionManagerTests::testGalleryGroup()
+{
+    QTemporaryDir directory;
+    QVERIFY(QDir(directory.path()).mkdir("folder"));
+    QImage image(80, 60, QImage::Format_ARGB32);
+    image.fill(Qt::blue);
+    for (const QString &name : {QString("A.png"), QString("B.png"), QString("C.png"), QString("D.png")})
+        QVERIFY(image.save(directory.filePath(name)));
+    MainWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    struct CloseWindow { MainWindow &window; ~CloseWindow() { window.close(); } } cleanup{window};
+    window.show();
+    auto *grid = window.findChild<QListView *>("folderGrid");
+    auto *core = window.findChild<QVImageCore *>();
+    auto *gallery = window.findChild<QVGalleryView *>();
+    auto *button = window.findChild<QPushButton *>("galleryViewGroup");
+    QVERIFY(grid && core && gallery && button);
+    const QVariant oldLoop = QSettings().value("options/loopfoldersenabled");
+    struct RestoreLoop {
+        QVariant value;
+        ~RestoreLoop() {
+            if (value.isValid()) QSettings().setValue("options/loopfoldersenabled", value);
+            else QSettings().remove("options/loopfoldersenabled");
+            qvApp->getSettingsManager().loadSettings();
+        }
+    } restoreLoop{oldLoop};
+    QSettings().setValue("options/loopfoldersenabled", true);
+    qvApp->getSettingsManager().loadSettings();
+    for (int activation = 0; activation < 3; ++activation) {
+        window.openFile(directory.path());
+        QTRY_COMPARE(grid->model()->rowCount(), 5);
+        // Select in reverse order, including a folder: media keep gallery order.
+        grid->setCurrentIndex(grid->model()->index(4, 0));
+        grid->selectionModel()->select(grid->model()->index(1, 0), QItemSelectionModel::Select);
+        grid->selectionModel()->select(grid->model()->index(0, 0), QItemSelectionModel::Select);
+        QCOMPARE(gallery->selectedMediaFiles().size(), 2);
+        QVERIFY(button->isVisible());
+        grid->setFocus();
+        if (activation == 0) button->click();
+        else QTest::keyClick(grid, activation == 1 ? Qt::Key_Return : Qt::Key_Enter);
+        QTRY_VERIFY(window.getIsMediaLoaded());
+        QTRY_VERIFY(!core->isLoadInProgress());
+        QCOMPARE(window.getCurrentMedia().fileInfo.fileName(), QString("A.png"));
+        QCOMPARE(window.getCurrentMedia().folderFiles.size(), 2);
+        core->updateFolderInfo();
+        for (const QString &expected : {QString("D.png"), QString("A.png")}) {
+            window.nextFile();
+            QTRY_COMPARE(window.getCurrentMedia().fileInfo.fileName(), expected);
+            QTRY_VERIFY(!core->isLoadInProgress());
+        }
+        window.previousFile();
+        QTRY_COMPARE(window.getCurrentMedia().fileInfo.fileName(), QString("D.png"));
+        QTRY_VERIFY(!core->isLoadInProgress());
+        window.openFile(directory.filePath("A.png"));
+        QTRY_VERIFY(!core->isLoadInProgress());
+        QCOMPARE(window.getCurrentMedia().folderFiles.size(), 4);
+        window.nextFile();
+        QTRY_COMPARE(window.getCurrentMedia().fileInfo.fileName(), QString("B.png"));
+        QTRY_VERIFY(!core->isLoadInProgress());
+    }
 }
 
 void ActionManagerTests::testGalleryQuickActions()

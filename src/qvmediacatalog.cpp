@@ -11,6 +11,13 @@
 
 void QVMediaCatalog::setCurrentFile(const QFileInfo &fileInfo, MediaType mediaType)
 {
+    if (navigationGroup) {
+        const auto &files = currentState.folderFiles;
+        const bool member = std::any_of(files.cbegin(), files.cend(), [&](const MediaFile &file) {
+            return QFileInfo(file.absoluteFilePath) == fileInfo;
+        });
+        if (!member) clearNavigationGroup();
+    }
     currentState.fileInfo = fileInfo;
     currentState.mediaType = mediaType;
     updateCurrentIndex();
@@ -182,6 +189,16 @@ void QVMediaCatalog::updateFolder(QString dirPath, const ScanOptions &options)
             return;
     }
 
+    if (navigationGroup && QDir(dirPath).absolutePath() == lastDirInfo.dirPath) {
+        // Keep the explicit selection and its gallery order across refreshes.
+        auto &files = currentState.folderFiles;
+        files.erase(std::remove_if(files.begin(), files.end(), [](const MediaFile &file) {
+            return !QFileInfo(file.absoluteFilePath).isFile();
+        }), files.end());
+        updateCurrentIndex();
+        return;
+    }
+    clearNavigationGroup();
     auto files = scanFolder(dirPath, options);
     const DirInfo dirInfo = { QDir(dirPath).absolutePath(), files.count(), options.sortMode,
                               options.sortDescending };
@@ -206,10 +223,20 @@ void QVMediaCatalog::updateFolder(QString dirPath, const ScanOptions &options)
 }
 
 void QVMediaCatalog::setFolderOrder(const QString &path, const QList<MediaFile> &files,
-                                    const ScanOptions &options)
+                                    const ScanOptions &options, bool selectedGroup)
 {
+    navigationGroup = selectedGroup;
     currentState.folderFiles = files;
     lastDirInfo = { QDir(path).absolutePath(), files.count(), options.sortMode, options.sortDescending };
+    updateCurrentIndex();
+}
+
+void QVMediaCatalog::clearNavigationGroup()
+{
+    if (!navigationGroup) return;
+    navigationGroup = false;
+    currentState.folderFiles.clear();
+    lastDirInfo = {};
     updateCurrentIndex();
 }
 

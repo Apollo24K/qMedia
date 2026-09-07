@@ -32,9 +32,10 @@ public:
     Q_ENUM(GoToFileMode)
 
     QMimeData *getMimeData() const;
+    void clearNavigationGroup() { imageCore.clearNavigationGroup(); }
     void setFolderOrder(const QString &path, const QList<QVMediaCatalog::MediaFile> &files,
-                        const QVMediaCatalog::ScanOptions &options) {
-        imageCore.setFolderOrder(path, files, options);
+                        const QVMediaCatalog::ScanOptions &options, bool selectedGroup = false) {
+        imageCore.setFolderOrder(path, files, options, selectedGroup);
     }
     void loadMimeData(const QMimeData *mimeData);
     void loadFile(const QString &fileName);
