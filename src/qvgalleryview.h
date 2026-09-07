@@ -24,6 +24,8 @@ public:
     QStringList selectedPaths() const;
     bool hasSelection() const;
     void clearSelection();
+    void zoom(int direction);
+    void resetZoom();
 
 signals:
     void pathActivated(const QString &path);
@@ -49,6 +51,7 @@ private:
     QVBoxLayout *recentLayout;
     QString selection;
     QTimer *layoutTimer;
+    int tileZoom = 0;
     int scrollPosition = 0;
     bool restoreScroll = false;
     bool folderLoading = false;

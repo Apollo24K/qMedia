@@ -15,12 +15,13 @@
 #include <QStyledItemDelegate>
 #include <QVBoxLayout>
 #include <QTimer>
+#include <cmath>
 
 namespace {
 constexpr int galleryTopSpace = 64;
-QSize galleryCellSize(int viewportWidth)
+QSize galleryCellSize(int viewportWidth, int preferredWidth)
 {
-    const int columns = qMax(1, viewportWidth / 176);
+    const int columns = qMax(1, viewportWidth / preferredWidth);
     // QListView wraps against an inclusive right edge; reserve its final pixel.
     const int width = qMax(1, viewportWidth - 1);
     return QSize(qMax(1, width / columns), qRound(0.75 * width / columns) + 28);
@@ -56,7 +57,8 @@ public:
     {
         // Layout must never request DecorationRole for offscreen entries.
         const auto *view = qobject_cast<const QListView *>(option.widget);
-        return galleryCellSize(view ? view->viewport()->width() : 176);
+        return galleryCellSize(view ? view->viewport()->width() : 176,
+                               view ? view->property("preferredTileWidth").toInt() : 176);
     }
     void paint(QPainter *p, const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
@@ -158,10 +160,11 @@ QVGalleryView::QVGalleryView(QWidget *parent) : QWidget(parent)
     galleryLayout->setContentsMargins(0, 0, 0, 0);
     model = new QVGalleryModel(this);
     list = new GalleryListView(gallery);
+    list->setProperty("preferredTileWidth", 176);
     layoutTimer = new QTimer(this);
     layoutTimer->setSingleShot(true);
     connect(layoutTimer, &QTimer::timeout, this, [this] {
-        list->setGridSize(galleryCellSize(list->maximumViewportSize().width()));
+        list->setGridSize(galleryCellSize(list->maximumViewportSize().width(), list->property("preferredTileWidth").toInt()));
         list->doItemsLayout();
         restoreScrollPosition();
     });
@@ -320,6 +323,26 @@ void QVGalleryView::restoreScrollPosition()
     if (bar->maximum() >= scrollPosition || model->rowCount() == 0
             || list->visualRect(model->index(model->rowCount() - 1)).isValid())
         restoreScroll = false;
+}
+
+void QVGalleryView::zoom(int direction)
+{
+    const int next = qBound(-4, tileZoom + direction, 6);
+    if (next == tileZoom) return;
+    const int oldHeight = qMax(1, list->gridSize().height());
+    tileZoom = next;
+    const int width = qRound(176 * std::pow(1.25, tileZoom));
+    list->setProperty("preferredTileWidth", width);
+    const int newHeight = galleryCellSize(list->viewport()->width(), width).height();
+    scrollPosition = list->verticalScrollBar()->value();
+    if (scrollPosition > 0) scrollPosition = qRound(double(scrollPosition) * newHeight / oldHeight);
+    restoreScroll = true;
+    layoutTimer->start(0);
+}
+
+void QVGalleryView::resetZoom()
+{
+    zoom(-tileZoom);
 }
 
 void QVGalleryView::clearSelection()

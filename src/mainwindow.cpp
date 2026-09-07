@@ -778,7 +778,9 @@ void MainWindow::disableActions()
                     clone->setEnabled(getImageDetails().isPixmapLoaded);
                 } else if (cloneData.last() == "mediadisable") {
                     clone->setEnabled(getIsMediaLoaded()
-                                      || (data.first() == "reloadfile" && isBrowsingFolder())
+                                      || ((data.first() == "reloadfile" || data.first() == "zoomin" || data.first() == "zoomout"
+                                           || data.first() == "resetzoom" || data.first() == "originalsize")
+                                          && isBrowsingFolder())
                                       || (data.first() == "delete" && isBrowsingFolder()
                                           && galleryView->hasSelection() && !galleryTrashInProgress));
                 } else if (cloneData.last() == "historydisable") {
@@ -1509,22 +1511,26 @@ void MainWindow::rename()
 
 void MainWindow::zoomIn()
 {
-    graphicsView->zoomIn();
+    if (isBrowsingFolder()) galleryView->zoom(1);
+    else graphicsView->zoomIn();
 }
 
 void MainWindow::zoomOut()
 {
-    graphicsView->zoomOut();
+    if (isBrowsingFolder()) galleryView->zoom(-1);
+    else graphicsView->zoomOut();
 }
 
 void MainWindow::resetZoom()
 {
-    graphicsView->resetScale();
+    if (isBrowsingFolder()) galleryView->resetZoom();
+    else graphicsView->resetScale();
 }
 
 void MainWindow::resetView()
 {
-    graphicsView->resetView();
+    if (isBrowsingFolder()) galleryView->resetZoom();
+    else graphicsView->resetView();
 }
 
 void MainWindow::rotateRight()

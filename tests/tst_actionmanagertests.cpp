@@ -84,6 +84,8 @@ private slots:
     void testCombinedOpenDialog();
     void testGalleryLayoutAndSelection();
     void testGalleryRefreshPosition();
+    void testGalleryThumbnailRefresh();
+    void testGalleryZoom();
     void testFolderArrowNavigation();
     void testFolderShortcutMigration();
     void testBatchTrash();
@@ -375,6 +377,95 @@ void ActionManagerTests::testGalleryLayoutAndSelection()
     QTest::mouseClick(grid->viewport(), Qt::LeftButton, Qt::NoModifier, first);
     QTest::mouseDClick(grid->viewport(), Qt::LeftButton, Qt::NoModifier, first);
     QTRY_VERIFY(window.getIsMediaLoaded());
+}
+
+void ActionManagerTests::testGalleryThumbnailRefresh()
+{
+    QTemporaryDir directory;
+    QImage image(80, 60, QImage::Format_ARGB32);
+    image.fill(Qt::blue);
+    for (const QString &name : {QString("a.png"), QString("b.png"), QString("c.png")})
+        QVERIFY(image.save(directory.filePath(name)));
+    QVMediaCatalog::ScanOptions options;
+    options.supportedMedia.append({QVMediaCatalog::MediaType::Image, {".png"}, {}});
+    QVGalleryModel model;
+    QSignalSpy loaded(&model, &QVGalleryModel::folderLoaded);
+    model.openFolder(directory.path(), options);
+    QTRY_COMPARE(model.rowCount(), 3);
+    QTRY_VERIFY(!qvariant_cast<QImage>(model.index(1).data(Qt::DecorationRole)).isNull());
+    QTRY_VERIFY(!qvariant_cast<QImage>(model.index(2).data(Qt::DecorationRole)).isNull());
+    const QImage b = qvariant_cast<QImage>(model.index(1).data(Qt::DecorationRole));
+    const QImage c = qvariant_cast<QImage>(model.index(2).data(Qt::DecorationRole));
+    QVERIFY(QFile::remove(directory.filePath("a.png")));
+    model.openFolder(directory.path(), options);
+    QCOMPARE(model.rowCount(), 3); // The current view stays populated during the scan.
+    QTRY_COMPARE(loaded.count(), 2);
+    QCOMPARE(model.rowCount(), 2);
+    QCOMPARE(qvariant_cast<QImage>(model.index(0).data(Qt::DecorationRole)).cacheKey(), b.cacheKey());
+    QCOMPARE(qvariant_cast<QImage>(model.index(1).data(Qt::DecorationRole)).cacheKey(), c.cacheKey());
+    image = QImage(100, 90, QImage::Format_ARGB32);
+    image.fill(Qt::red);
+    QVERIFY(image.save(directory.filePath("b.png")));
+    model.openFolder(directory.path(), options);
+    QTRY_COMPARE(loaded.count(), 3);
+    QTRY_COMPARE(qvariant_cast<QImage>(model.index(0).data(Qt::DecorationRole)).pixelColor(0, 0), QColor(Qt::red));
+    QCOMPARE(qvariant_cast<QImage>(model.index(1).data(Qt::DecorationRole)).cacheKey(), c.cacheKey());
+}
+
+void ActionManagerTests::testGalleryZoom()
+{
+    QTemporaryDir directory;
+    QImage image(80, 60, QImage::Format_ARGB32);
+    image.fill(Qt::blue);
+    for (int i = 0; i < 24; ++i) QVERIFY(image.save(directory.filePath(QString("photo%1.png").arg(i))));
+    MainWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    struct CloseWindow { MainWindow &window; ~CloseWindow() { window.close(); } } cleanup{window};
+    window.show();
+    window.resize(1000, 600);
+    window.showFolder(directory.path());
+    auto *grid = window.findChild<QListView *>("folderGrid");
+    QTRY_COMPARE(grid->model()->rowCount(), 24);
+    QTRY_VERIFY(grid->gridSize().width() > 0);
+    grid->setFocus();
+    const int original = grid->gridSize().width();
+    QTest::keyClick(grid, Qt::Key_Plus);
+    QTRY_VERIFY(grid->gridSize().width() > original);
+    const auto fillsWidth = [&] {
+        const int columns = qMax(1, grid->viewport()->width() / grid->property("preferredTileWidth").toInt());
+        const QRect first = grid->visualRect(grid->model()->index(0, 0));
+        const QRect last = grid->visualRect(grid->model()->index(columns - 1, 0));
+        return first.top() == last.top() && grid->viewport()->width() - 1 - last.right() <= columns;
+    };
+    QTRY_VERIFY(fillsWidth());
+    window.resize(873, 600);
+    QTRY_VERIFY(fillsWidth());
+    QTest::keyClick(grid, Qt::Key_0, Qt::ControlModifier);
+    QTRY_COMPARE(grid->property("preferredTileWidth").toInt(), 176);
+    QTest::keyClick(grid, Qt::Key_Minus);
+    QTRY_VERIFY(grid->property("preferredTileWidth").toInt() < 176);
+    QTRY_VERIFY(fillsWidth());
+    window.openFile(directory.filePath("photo0.png"));
+    QTRY_VERIFY(window.getIsMediaLoaded());
+    auto *canvas = window.findChild<QVGraphicsView *>();
+    const qreal scale = canvas->transform().m11();
+    QTest::keyClick(canvas, Qt::Key_Plus);
+    QTRY_VERIFY(canvas->transform().m11() > scale);
+    const qreal larger = canvas->transform().m11();
+    QTest::keyClick(canvas, Qt::Key_Minus);
+    QTRY_VERIFY(canvas->transform().m11() < larger);
+    const auto *reset = qvApp->getActionManager().getAction("originalsize");
+    QVERIFY(reset->shortcuts().contains(QKeySequence(Qt::Key_O)));
+    QVERIFY(reset->shortcuts().contains(QKeySequence(Qt::CTRL | Qt::Key_0)));
+    QVERIFY(!qvApp->getActionManager().getAction("resetzoom")->shortcuts().contains(QKeySequence(Qt::CTRL | Qt::Key_0)));
+    QTest::keyClick(canvas, Qt::Key_O);
+    const QTransform fitted = canvas->transform();
+    const QPointF center = canvas->mapToScene(canvas->viewport()->rect().center());
+    canvas->scale(2.0, 2.0);
+    static_cast<QGraphicsView *>(canvas)->centerOn(center + QPointF(15, 10));
+    QTest::keyClick(canvas, Qt::Key_0, Qt::ControlModifier);
+    QCOMPARE(canvas->transform(), fitted);
+    QCOMPARE(canvas->mapToScene(canvas->viewport()->rect().center()), center);
 }
 
 void ActionManagerTests::testGalleryRefreshPosition()

@@ -37,13 +37,14 @@ private:
     void requestThumbnail(int row);
     QList<QVMediaCatalog::FolderEntry> entries;
     QString folder;
+    QStringList thumbnailKeys;
     quint64 generation = 0;
     std::shared_ptr<std::atomic_bool> cancelled;
     // KiB. Only visible cells ask for thumbnails; there is no decode queue.
-    mutable QCache<int, QImage> thumbnails{24 * 1024};
-    QSet<int> failedThumbnails;
+    mutable QCache<QString, QImage> thumbnails{24 * 1024};
+    QSet<QString> failedThumbnails;
     // Avoid repeated eviction/decoding if an exceptionally large viewport exceeds the cache.
-    QSet<int> requestedThumbnails;
+    QSet<QString> requestedThumbnails;
     QFutureWatcher<QImage> thumbnailWatcher;
     bool thumbnailBusy = false;
     bool thumbnailsEnabled = true;

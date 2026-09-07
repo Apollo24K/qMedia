@@ -61,6 +61,29 @@ void ShortcutManager::updateShortcuts()
         settings.setValue("gallerySelectionArrowsMigrated", true);
     }
 
+    if (!settings.value("directZoomDefaultsMigrated", false).toBool()) {
+        auto oldIn = keyBindingsToStringList(QKeySequence::ZoomIn);
+        const QString equal = QKeySequence(Qt::CTRL | Qt::Key_Equal).toString();
+        if (!oldIn.contains(equal)) oldIn.append(equal);
+        const auto migrate = [&](const QString &name, const QStringList &before, const QStringList &extra) {
+            if (settings.contains(name) && settings.value(name).toStringList() == before)
+                settings.setValue(name, before + extra);
+        };
+        migrate("zoomin", oldIn, {QKeySequence(Qt::Key_Plus).toString(), QKeySequence(Qt::Key_Equal).toString()});
+        migrate("zoomout", keyBindingsToStringList(QKeySequence::ZoomOut), {QKeySequence(Qt::Key_Minus).toString()});
+        settings.setValue("directZoomDefaultsMigrated", true);
+    }
+
+    if (!settings.value("resetViewShortcutMigrated", false).toBool()) {
+        const QString zero = QKeySequence(Qt::CTRL | Qt::Key_0).toString();
+        const QString letter = QKeySequence(Qt::Key_O).toString();
+        if (settings.value("resetzoom").toStringList() == QStringList{zero})
+            settings.setValue("resetzoom", QStringList{});
+        if (settings.value("originalsize").toStringList() == QStringList{letter})
+            settings.setValue("originalsize", QStringList{letter, zero});
+        settings.setValue("resetViewShortcutMigrated", true);
+    }
+
     // Older settings dialogs saved every shortcut, including unchanged defaults.
     // Free P from that persisted Pause binding when Filters is introduced. Once
     // Filters has itself been saved, subsequent user customizations are preserved.
@@ -189,15 +212,18 @@ void ShortcutManager::initializeShortcutsList()
                 QKeySequence(Qt::CTRL | Qt::Key_Equal).toString()))
         shortcutsList.last().defaultShortcuts << QKeySequence(Qt::CTRL | Qt::Key_Equal).toString();
 
+    shortcutsList.last().defaultShortcuts << QKeySequence(Qt::Key_Plus).toString()
+                                             << QKeySequence(Qt::Key_Equal).toString();
     shortcutsList.append(
             { tr("Zoom Out"), "zoomout", keyBindingsToStringList(QKeySequence::ZoomOut), {} });
+    shortcutsList.last().defaultShortcuts << QKeySequence(Qt::Key_Minus).toString();
     shortcutsList.append({ tr("Reset Zoom"),
                            "resetzoom",
-                           QStringList(QKeySequence(Qt::CTRL | Qt::Key_0).toString()),
+                           {},
                            {} });
     shortcutsList.append({ tr("Reset View"),
                            "originalsize",
-                           QStringList(QKeySequence(Qt::Key_O).toString()),
+                           {QKeySequence(Qt::Key_O).toString(), QKeySequence(Qt::CTRL | Qt::Key_0).toString()},
                            {} });
     shortcutsList.append({ tr("Rotate Right"),
                            "rotateright",
