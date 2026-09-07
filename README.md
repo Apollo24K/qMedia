@@ -1,7 +1,7 @@
 # qMedia
 
-A lightweight image and video viewer with a simple interface, responsive browsing,
-and creative tools that stay out of the way.
+A lightweight media viewer with a simple and responsive interface, expanding
+[qView](https://github.com/jurplel/qView) with video playback, folder gallery and creative tools.
 
 [Download](https://github.com/Apollo24K/qMedia/releases) · [GitHub](https://github.com/Apollo24K/qMedia)
 
@@ -31,8 +31,5 @@ viewer, a folder gallery, and live visual adjustments in one app.
   checking the result before saving.
 - **Personal controls and appearance.** Customizable keyboard shortcuts, quick
   mouse actions, background colors, and unobtrusive fullscreen viewing.
-
-qMedia is a personal fork of [qView](https://github.com/jurplel/qView), retaining
-its focus on simplicity while expanding what a lightweight media viewer can do.
 
 Build and development information is in [DEVELOPING.md](DEVELOPING.md).
