@@ -611,7 +611,7 @@ QVLayersHud::~QVLayersHud()
     delete toolbar;
 }
 
-bool QVLayersHud::isVisible() const { return !panel->isHidden(); }
+bool QVLayersHud::isVisible() const { return !toolbar->isHidden(); }
 void QVLayersHud::toggle() { setVisible(!isVisible()); }
 void QVLayersHud::setVisible(bool visible)
 {
@@ -623,7 +623,7 @@ void QVLayersHud::setVisible(bool visible)
         panel->savePlacement("layersHud/panel");
         toolbar->savePlacement("layersHud/tools");
     }
-    panel->setVisible(visible);
+    panel->setVisible(visible && !cropButton->isChecked());
     toolbar->setVisible(visible);
     if (visible) { panel->fitToViewport(); toolbar->fitToViewport(); panel->raise(); toolbar->raise(); }
     else panel->parentWidget()->setFocus();
@@ -649,7 +649,7 @@ void QVLayersHud::setBrushRadius(int radius)
 void QVLayersHud::setDistortActive(bool active)
 {
     distortButton->setChecked(active);
-    if (active) cropButton->setChecked(false);
+    if (active) setCropActive(false);
     panButton->setChecked(!active && !cropButton->isChecked());
 }
 
@@ -658,6 +658,7 @@ void QVLayersHud::setCropActive(bool active)
     cropButton->setChecked(active);
     if (active) distortButton->setChecked(false);
     panButton->setChecked(!active && !distortButton->isChecked());
+    panel->setVisible(isVisible() && !active);
 }
 
 void QVLayersHud::setSource(const QString &source, bool available)

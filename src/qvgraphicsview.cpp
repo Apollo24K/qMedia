@@ -183,11 +183,23 @@ void QVGraphicsView::enterEvent(QEnterEvent *event)
 #endif
 {
     QGraphicsView::enterEvent(event);
-    viewport()->setCursor(distortActive ? Qt::CrossCursor : Qt::ArrowCursor);
+    viewport()->setCursor(middlePanning ? Qt::ClosedHandCursor
+                         : distortActive ? Qt::CrossCursor : Qt::ArrowCursor);
 }
 
 void QVGraphicsView::mousePressEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::MiddleButton || middlePanning) {
+        if (!middlePanning) {
+            middlePanning = true;
+            middlePanPosition = event->pos();
+            cropDragging = false;
+            distortDragging = false;
+            viewport()->setCursor(Qt::ClosedHandCursor);
+        }
+        event->accept();
+        return;
+    }
     if (cropActive && event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier) {
         cropEdges = cropEdgesAt(event->pos());
         cropDragRect = cropScreenRect();
@@ -216,10 +228,6 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
     }
     if (event->button() == Qt::ForwardButton) {
         event->ignore();
-        return;
-    }
-    if (event->button() == Qt::MiddleButton) {
-        resetScale();
         return;
     }
 
@@ -279,6 +287,7 @@ void QVGraphicsView::mousePressEvent(QMouseEvent *event)
 
 void QVGraphicsView::mouseDoubleClickEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::MiddleButton || middlePanning) { mousePressEvent(event); return; }
     if ((distortActive || cropActive) && event->button() == Qt::LeftButton) { mousePressEvent(event); return; }
     if (event->button() == Qt::LeftButton) {
         emit fullscreenRequested();
@@ -289,6 +298,18 @@ void QVGraphicsView::mouseDoubleClickEvent(QMouseEvent *event)
 
 void QVGraphicsView::mouseMoveEvent(QMouseEvent *event)
 {
+    if (middlePanning) {
+        if (event->buttons().testFlag(Qt::MiddleButton)) {
+            const QPoint delta = event->pos() - middlePanPosition;
+            middlePanPosition = event->pos();
+            horizontalScrollBar()->setValue(horizontalScrollBar()->value()
+                    + (isRightToLeft() ? delta.x() : -delta.x()));
+            verticalScrollBar()->setValue(verticalScrollBar()->value() - delta.y());
+            event->accept();
+            return;
+        }
+        stopMiddlePan();
+    }
     if (cropActive) {
         if (cropDragging && event->buttons().testFlag(Qt::LeftButton)) moveCrop(event->pos());
         else cropDragging = false;
@@ -337,6 +358,11 @@ void QVGraphicsView::mouseMoveEvent(QMouseEvent *event)
 
 void QVGraphicsView::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::MiddleButton || middlePanning) {
+        if (event->button() == Qt::MiddleButton) stopMiddlePan();
+        event->accept();
+        return;
+    }
     if (cropActive && event->button() == Qt::LeftButton) {
         if (cropDragging) moveCrop(event->pos());
         cropDragging = false;
@@ -355,10 +381,21 @@ void QVGraphicsView::mouseReleaseEvent(QMouseEvent *event)
     viewport()->setCursor(Qt::ArrowCursor);
 }
 
+void QVGraphicsView::stopMiddlePan()
+{
+    if (!middlePanning) return;
+    middlePanning = false;
+    viewport()->setCursor(cropActive || distortActive ? Qt::CrossCursor : Qt::ArrowCursor);
+}
+
 bool QVGraphicsView::event(QEvent *event)
 {
     if (event->type() == QEvent::WindowDeactivate || event->type() == QEvent::FocusOut
-            || event->type() == QEvent::Hide) { distortDragging = false; cropDragging = false; }
+            || event->type() == QEvent::Hide) {
+        distortDragging = false;
+        cropDragging = false;
+        stopMiddlePan();
+    }
     // this is for touchpad pinch gestures
     if (event->type() == QEvent::Gesture) {
         auto *gestureEvent = static_cast<QGestureEvent *>(event);

@@ -72,6 +72,7 @@ private slots:
     void testDistortShortcut();
     void testCanvasCopy();
     void testCanvasCrop();
+    void testMiddleButtonPan();
     void testDistortCache();
     void testBrushZoom();
     void testEditedCanvasNavigationCost();
@@ -1075,6 +1076,61 @@ void ActionManagerTests::testDistortShortcut()
     QVERIFY(!canvas->isDistortActive());
 }
 
+void ActionManagerTests::testMiddleButtonPan()
+{
+    QTemporaryDir directory;
+    QImage image(800, 600, QImage::Format_RGB32);
+    image.fill(Qt::blue);
+    const QString path = directory.filePath("pan.png");
+    QVERIFY(image.save(path));
+    MainWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    struct CloseWindow { MainWindow &window; ~CloseWindow() { window.close(); } } cleanup{window};
+    window.show();
+    window.openFile(path);
+    auto *canvas = window.findChild<QVGraphicsView *>();
+    QTRY_VERIFY(canvas->canDistort());
+    window.resize(700, 500);
+    QCoreApplication::processEvents();
+    canvas->zoom(3.0);
+
+    for (int tool = 0; tool < 3; ++tool) {
+        canvas->setCropActive(tool == 1);
+        canvas->setDistortActive(tool == 2);
+        const auto transform = canvas->transform();
+        const auto draft = canvas->cropDraftRect();
+        const auto layers = canvas->layerModel()->stack();
+        const QPoint start = canvas->viewport()->rect().center();
+        const QPoint delta(30, 20);
+        const QPointF before = canvas->mapToScene(start);
+        QTest::mousePress(canvas->viewport(), Qt::MiddleButton, Qt::NoModifier, start);
+        QCOMPARE(canvas->viewport()->cursor().shape(), Qt::ClosedHandCursor);
+        QCOMPARE(canvas->transform(), transform);
+        QCOMPARE(canvas->mapToScene(start), before);
+        QMouseEvent drag(QEvent::MouseMove, QPointF(start + delta), Qt::NoButton,
+                         Qt::MiddleButton, Qt::NoModifier);
+        QApplication::sendEvent(canvas->viewport(), &drag);
+        QVERIFY(QLineF(canvas->mapToScene(start + delta), before).length() < 0.01);
+        QTest::mouseRelease(canvas->viewport(), Qt::MiddleButton, Qt::NoModifier, start + delta);
+        QVERIFY(canvas->viewport()->cursor().shape() != Qt::ClosedHandCursor);
+        QCOMPARE(canvas->transform(), transform);
+        QCOMPARE(canvas->cropDraftRect(), draft);
+        QVERIFY(canvas->layerModel()->stack().samePixels(layers));
+        const QPointF after = canvas->mapToScene(start);
+        QMouseEvent hover(QEvent::MouseMove, QPointF(start), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(canvas->viewport(), &hover);
+        QCOMPARE(canvas->mapToScene(start), after);
+
+        QTest::mousePress(canvas->viewport(), Qt::MiddleButton, Qt::NoModifier, start);
+        QEvent deactivate(QEvent::WindowDeactivate);
+        QApplication::sendEvent(canvas, &deactivate);
+        QVERIFY(canvas->viewport()->cursor().shape() != Qt::ClosedHandCursor);
+        QApplication::sendEvent(canvas->viewport(), &drag);
+        QCOMPARE(canvas->mapToScene(start), after);
+        QTest::mouseRelease(canvas->viewport(), Qt::MiddleButton, Qt::NoModifier, start + delta);
+    }
+}
+
 void ActionManagerTests::testCanvasCrop()
 {
     QTemporaryDir directory;
@@ -1096,10 +1152,18 @@ void ActionManagerTests::testCanvasCrop()
     window.toggleLayers();
     auto *crop = canvas->findChild<QToolButton *>("layersCrop");
     QVERIFY(crop && crop->isEnabled());
+    auto *hud = canvas->findChild<QVLayersHud *>();
+    auto *list = canvas->findChild<QListWidget *>("layersList");
+    QVERIFY(hud && list && list->isVisible());
     const auto transform = canvas->transform();
     const auto center = canvas->mapToScene(canvas->viewport()->rect().center());
     crop->click();
     QVERIFY(canvas->isCropActive());
+    QVERIFY(!list->isVisible());
+    QVERIFY(crop->isVisible());
+    QVERIFY(hud->isVisible());
+    hud->setVisible(true);
+    QVERIFY(!list->isVisible());
     const QPoint edge = canvas->mapFromScene(QPointF(80, 30));
     QTest::mousePress(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, edge);
     QMouseEvent drag(QEvent::MouseMove, QPointF(edge+QPoint(12, 0)), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
@@ -1109,6 +1173,7 @@ void ActionManagerTests::testCanvasCrop()
     QVERIFY(canvas->setCropDraft(QRectF(-0.25, 0, 1.25, 1.5)));
     QTest::keyClick(canvas, Qt::Key_Return);
     QVERIFY(!canvas->isCropActive());
+    QVERIFY(list->isVisible());
     QCOMPARE(canvas->currentMediaSize(), QSize(100, 90));
     QCOMPARE(canvas->transform(), transform);
     QCOMPARE(canvas->mapToScene(canvas->viewport()->rect().center()), center);

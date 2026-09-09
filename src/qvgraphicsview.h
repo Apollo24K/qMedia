@@ -225,6 +225,9 @@ private:
     QCache<QString, SessionComposite> sessionComposites{128 * 1024};
     void saveSessionEdits();
     void restoreSessionEdits(const QString &path);
+    bool middlePanning = false;
+    QPoint middlePanPosition;
+    void stopMiddlePan();
     bool cropActive = false;
     bool cropDragging = false;
     bool cropMoving = false;
